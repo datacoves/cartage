@@ -20,8 +20,41 @@ SIGNATURES = {
 def _forget_other_project(top: str, root: Path) -> None:
     """Drop a cached top-level module (e.g. `transforms`) that was imported from a different project root."""
     cached = sys.modules.get(top)
+    if cached is None:
+        return
+
+    # Check if this module/package exists locally
+    local_exists = (root / top).exists() or (root / f"{top}.py").exists()
+    if not local_exists:
+        return
+
+    # Determine if we have stale cache entries from a different root
+    root_resolved = root.resolve()
+    has_stale = False
+
+    # Check __file__ for regular modules
     location = getattr(cached, "__file__", None)
-    if location and (root / top).exists() and not Path(location).resolve().is_relative_to(root.resolve()):
+    if location:
+        try:
+            if not Path(str(location)).resolve().is_relative_to(root_resolved):
+                has_stale = True
+        except (ValueError, TypeError):
+            has_stale = True
+
+    # For namespace packages, check if ANY __path__ entry is from a different root
+    if not has_stale:
+        paths = getattr(cached, "__path__", None)
+        if paths:
+            for path_entry in paths:
+                try:
+                    if not Path(str(path_entry)).resolve().is_relative_to(root_resolved):
+                        has_stale = True
+                        break
+                except (ValueError, TypeError):
+                    has_stale = True
+                    break
+
+    if has_stale:
         for name in [n for n in sys.modules if n == top or n.startswith(top + ".")]:
             del sys.modules[name]
 
@@ -90,13 +123,18 @@ def apply_steps(records: list[dict], steps: list[Step]) -> StepOutput:
         current, kept = out.records, []
         if step.kind == "batch":
             try:
-                kept = list(step.func(current, **step.kwargs))
+                yielded = list(step.func(current, **step.kwargs))
             except Exception as e:
                 if step.on_error == "fail":
                     raise FatalRunError(f"Transform {step.ref} failed (on_error: fail): {type(e).__name__}: {e}") from e
                 out.errors.extend(_record_error(step, r, f"{type(e).__name__}: {e}") for r in current)
                 kept = []
             else:
+                for item in yielded:
+                    if isinstance(item, dict):
+                        kept.append(item)
+                    else:
+                        out.errors.append(RecordError(stage="transform", message=f"{step.ref}: a batch step must yield dicts, got {type(item).__name__}", source=None, record=None))
                 out.filtered += max(len(current) - len(kept), 0)
         else:
             for record in current:

@@ -99,3 +99,55 @@ def test_same_module_name_from_another_project(root, tmp_path_factory):
     (other / "tfx" / "steps.py").write_text(textwrap.dedent("def add_b(record):\n    return {'other': True}\n"))
     import_ref("tfx.steps:add_b", root)
     assert import_ref("tfx.steps:add_b", other)({}) == {"other": True}
+
+
+def test_namespace_package_isolation(tmp_path_factory):
+    """Namespace packages (no __init__.py) from different roots are isolated."""
+    root1 = tmp_path_factory.mktemp("root1")
+    tfxns1 = root1 / "tfxns"
+    tfxns1.mkdir()
+    (tfxns1 / "steps.py").write_text("def get_root():\n    return {'root': 1}\n")
+
+    root2 = tmp_path_factory.mktemp("root2")
+    tfxns2 = root2 / "tfxns"
+    tfxns2.mkdir()
+    (tfxns2 / "steps.py").write_text("def get_root():\n    return {'root': 2}\n")
+
+    func1 = import_ref("tfxns.steps:get_root", root1)
+    func2 = import_ref("tfxns.steps:get_root", root2)
+
+    assert func1() == {"root": 1}
+    assert func2() == {"root": 2}
+
+
+def test_single_file_module_isolation(tmp_path_factory):
+    """Single-file modules from different roots are isolated."""
+    root1 = tmp_path_factory.mktemp("root1")
+    (root1 / "onefile.py").write_text("def get_source():\n    return {'source': 1}\n")
+
+    root2 = tmp_path_factory.mktemp("root2")
+    (root2 / "onefile.py").write_text("def get_source():\n    return {'source': 2}\n")
+
+    func1 = import_ref("onefile:get_source", root1)
+    func2 = import_ref("onefile:get_source", root2)
+
+    assert func1() == {"source": 1}
+    assert func2() == {"source": 2}
+
+
+def test_batch_step_yields_non_dict_items(root):
+    """Batch step yielding non-dict items creates errors; dicts pass through."""
+    code = textwrap.dedent("""\
+        def mixed_yield(records):
+            for r in records:
+                yield r if r["a"] == 1 else "not a dict"
+    """)
+    (root / "tfx" / "steps.py").write_text(code)
+
+    out = apply_steps(
+        [{"a": 1}, {"a": 2}],
+        steps(root, {"batch": "tfx.steps:mixed_yield"}),
+    )
+    assert out.records == [{"a": 1}]
+    assert len(out.errors) == 1
+    assert "a batch step must yield dicts, got str" in out.errors[0].message
