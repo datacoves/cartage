@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 from typing import Callable, Iterator
 
 import dlt
@@ -16,6 +17,7 @@ class DltEngine:
             on_progress: Callable[[RunResult], None]) -> RunResult:
         os.environ.setdefault("RUNTIME__DLTHUB_TELEMETRY", "false")
         os.environ.setdefault("RUNTIME__LOG_LEVEL", "CRITICAL")
+        os.environ.setdefault("LOAD__DELETE_COMPLETED_JOBS", "true")  # the state archive must not keep loaded data
         result = RunResult()
         fatal: list[CartageError] = []  # dlt wraps exceptions; keep ours to re-raise with exit code intact
 
@@ -69,4 +71,7 @@ class DltEngine:
             if fatal:
                 raise fatal[0] from e
             raise FatalRunError(f"dlt pipeline failed: {e}") from e
+        # Loaded packages and the run trace hold copies of the data; keep only dlt state in the archive.
+        shutil.rmtree(state.dlt_dir / name / "load" / "loaded", ignore_errors=True)
+        (state.dlt_dir / name / "trace.pickle").unlink(missing_ok=True)
         return result

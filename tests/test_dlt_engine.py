@@ -26,3 +26,25 @@ def test_failed_run_does_not_replay_in_reused_dlt_dir(tmp_path):
         DltEngine().run("p", Src(), [], dest, state, lambda r: None)
     result = DltEngine().run("p", Src(), [], dest, state, lambda r: None)
     assert (result.read, result.ok) == (2, 2)
+
+
+CLEAN_CSV = "material,industry,type,description,uom,status\n100001,M,FERT,Pump housing,EA,active\n100002,M,ROH,Steel,KG,active\n"
+
+
+def test_state_archive_keeps_no_loaded_data(project):
+    import json
+    import tarfile
+
+    from typer.testing import CliRunner
+
+    from cartage.cli import app
+
+    (project / "data/materials/materials.csv").write_text(CLEAN_CSV)
+    run = lambda: CliRunner().invoke(app, ["-C", str(project), "run", "materials", "--engine", "dlt", "--json"])
+    first = run()
+    assert first.exit_code == 0, first.output
+    second = run()
+    assert second.exit_code == 0 and json.loads(second.stdout)["read"] == 0
+    with tarfile.open(project / ".cartage/state/materials_to_sap/dev/dlt.tar.gz") as tar:
+        names = tar.getnames()
+    assert names and not [n for n in names if "completed_jobs" in n or "/load/loaded" in n or n.endswith("trace.pickle")], names
