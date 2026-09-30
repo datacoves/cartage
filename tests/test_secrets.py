@@ -55,3 +55,32 @@ def test_error_panel_masks_secret_values(tmp_path):
     result = CliRunner().invoke(t)
     assert "hunter2hunter2" not in result.output
     assert "****" in result.output
+
+
+def test_short_values_not_masked(tmp_path):
+    s = Secrets(tmp_path, environ={"PORT": "22"})
+    s.resolve("${env:PORT}", "x")
+    assert mask("connection on port 22") == "connection on port 22"
+
+
+def test_long_values_are_masked(tmp_path):
+    s = Secrets(tmp_path, environ={"PASSWORD": "secret123"})
+    s.resolve("${env:PASSWORD}", "x")
+    assert mask("auth failed with secret123") == "auth failed with ****"
+
+
+def test_invalid_yaml_in_secrets_file(tmp_path):
+    (tmp_path / ".cartage").mkdir()
+    (tmp_path / ".cartage" / "secrets.yaml").write_text("invalid: yaml: content:")
+    with pytest.raises(CartageError) as info:
+        Secrets(tmp_path, environ={}).resolve("${secret:key}", "x")
+    assert ".cartage/secrets.yaml" in info.value.message
+    assert "invalid YAML" in info.value.message
+
+
+def test_non_mapping_top_level_in_secrets_file(tmp_path):
+    (tmp_path / ".cartage").mkdir()
+    (tmp_path / ".cartage" / "secrets.yaml").write_text("- item1\n- item2\n")
+    with pytest.raises(CartageError) as info:
+        Secrets(tmp_path, environ={}).resolve("${secret:key}", "x")
+    assert ".cartage/secrets.yaml must contain a mapping" in info.value.message

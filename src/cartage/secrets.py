@@ -36,7 +36,16 @@ class Secrets:
     def _file_values(self) -> dict:
         if self._file is None:
             path = self.root / SECRETS_FILE
-            self._file = (YAML(typ="safe").load(path.read_text(encoding="utf-8")) or {}) if path.is_file() else {}
+            if path.is_file():
+                try:
+                    data = YAML(typ="safe").load(path.read_text(encoding="utf-8"))
+                except Exception as e:
+                    raise CartageError(f"{SECRETS_FILE.as_posix()}: invalid YAML: {e}")
+                if not isinstance(data, dict):
+                    raise CartageError(f"{SECRETS_FILE.as_posix()} must contain a mapping")
+                self._file = data or {}
+            else:
+                self._file = {}
         return self._file
 
     def lookup(self, kind: str, key: str, where: str) -> str:
@@ -55,7 +64,8 @@ class Secrets:
                                        hint=f"Set {env_key(key)} or add it to {SECRETS_FILE.as_posix()}")
                 value = node
         value = str(value)
-        if value:
+        # ponytail: mask only values >= 4 chars; secrets under 4 chars (e.g., "22", "h1") slip through to keep noise out of error output
+        if len(value) >= 4:
             _REVEALED.add(value)
         return value
 
