@@ -84,3 +84,16 @@ def test_non_mapping_top_level_in_secrets_file(tmp_path):
     with pytest.raises(CartageError) as info:
         Secrets(tmp_path, environ={}).resolve("${secret:key}", "x")
     assert ".cartage/secrets.yaml must contain a mapping" in info.value.message
+
+
+def test_debug_traceback_masks_secret_values(tmp_path):
+    Secrets(tmp_path, environ={"CARTAGE_SECRET__SAP__PASSWD": "hunter3hunter3"}).resolve("${secret:sap.passwd}", "x")
+    t = typer.Typer()
+
+    @t.command()
+    def boom():
+        with ui.handle_errors(debug=True):
+            raise CartageError("RFC logon failed with password hunter3hunter3")
+
+    result = CliRunner().invoke(t)
+    assert "Traceback" in result.output and "hunter3hunter3" not in result.output

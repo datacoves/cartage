@@ -43,7 +43,7 @@ def handle_errors(debug: bool = False) -> Iterator[None]:
     except CartageError as e:
         show_error(e)
         if debug:
-            err_console.print_exception()
+            err_console.print(Text(mask(traceback.format_exc())))
         raise typer.Exit(e.exit_code) from e
     except (typer.Exit, click.exceptions.Exit, click.exceptions.Abort, click.ClickException):
         raise

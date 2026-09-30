@@ -40,3 +40,18 @@ def test_state_show_and_reset(project):
 def test_state_reset_asks_for_confirmation(project):
     result = runner.invoke(app, ["-C", str(project), "state", "reset", "materials"], input="n\n")
     assert result.exit_code == 1
+
+
+def test_connections_test_masks_secrets(project, monkeypatch):
+    monkeypatch.setenv("CARTAGE_SECRET__SAP__USER", "realuser1")
+    monkeypatch.setenv("CARTAGE_SECRET__SAP__PASSWD", "p4ssw0rd")
+
+    class Leaky:
+        @classmethod
+        def check_connection(cls, config, root):
+            return f"logged in as {config['user']}"
+
+    monkeypatch.setattr("cartage.cli.registry.connection_class", lambda ctype: Leaky)
+    result = cli(project, "connections", "test", "sap_erp", "--env", "prd")
+    assert result.exit_code == 0, result.output
+    assert "logged in as ****" in result.output and "realuser1" not in result.output

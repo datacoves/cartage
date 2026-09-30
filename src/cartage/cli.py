@@ -170,7 +170,7 @@ def connections_test(name: str = typer.Argument(..., help="Connection name."), e
         ctype, config, where = project.connection(name, env)
         config = Secrets(project.root).resolve(config, where)
         message = registry.connection_class(ctype).check_connection(config, project.root)
-    ui.console.print(ui.Text.assemble(("✔ ", "green"), (name, "bold"), f" ({ctype}, {env}): ", message))
+    ui.console.print(ui.Text.assemble(("✔ ", "green"), (name, "bold"), f" ({ctype}, {env}): ", mask(message)))
 
 
 def _store(pipeline: str, env: str | None) -> tuple[StateStore, str, str]:
