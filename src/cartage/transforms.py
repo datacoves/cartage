@@ -147,6 +147,8 @@ def apply_steps(records: list[dict], steps: list[Step]) -> StepOutput:
                     continue
                 if step.kind == "map":
                     if isinstance(value, dict):
+                        if "_source" in record:
+                            value.setdefault("_source", record["_source"])
                         kept.append(value)
                     else:
                         out.errors.append(_record_error(step, record, f"a map step must return a dict, got {type(value).__name__}"))

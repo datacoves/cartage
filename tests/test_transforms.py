@@ -151,3 +151,10 @@ def test_batch_step_yields_non_dict_items(root):
     assert out.records == [{"a": 1}]
     assert len(out.errors) == 1
     assert "a batch step must yield dicts, got str" in out.errors[0].message
+
+
+def test_map_returning_new_dict_keeps_source():
+    from cartage.transforms import Step
+    step = Step("map", "x:rename", lambda r: {"id": r["a"]}, {}, "record")
+    out = apply_steps([{"a": 1, "_source": "f.csv:2"}, {"a": 2}], [step])
+    assert out.records == [{"id": 1, "_source": "f.csv:2"}, {"id": 2}]
