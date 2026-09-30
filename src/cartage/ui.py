@@ -10,16 +10,17 @@ from rich.panel import Panel
 from rich.text import Text
 
 from cartage.core import CartageError
+from cartage.secrets import mask
 
 console = Console(highlight=False)
 err_console = Console(stderr=True, highlight=False)
 
 
 def show_error(error: CartageError) -> None:
-    body = Text(error.message)
+    body = Text(mask(error.message))
     if error.hint:
         body.append("\n\nhint: ", style="dim")
-        body.append(error.hint)
+        body.append(mask(error.hint))
     err_console.print(Panel(body, title="error", title_align="left", border_style="red"))
 
 
