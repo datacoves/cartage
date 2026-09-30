@@ -43,6 +43,8 @@ class DltEngine:
 
         # ponytail: dlt drops None-valued fields before the sink, unlike the python engine. Destinations must treat
         # a missing key and None the same (the SAP mapping does); preserve nulls explicitly if that ever matters.
+        # ponytail: the sink re-chunks at batch_size=100, so per_batch commit groups can differ from the python engine
+        # (which commits per source batch); pass the source batch size through if exact parity matters.
         @dlt.destination(name="cartage_sink", batch_size=100, loader_file_format="typed-jsonl", max_parallel_load_jobs=1)
         def sink(items, table) -> None:
             try:

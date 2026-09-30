@@ -91,6 +91,8 @@ class S3Source:
             for page in self.client.get_paginator("list_objects_v2").paginate(Bucket=self.bucket, Prefix=_join(self.prefix, static)):
                 for obj in page.get("Contents", []):
                     rel = obj["Key"][len(self.prefix) + 1:] if self.prefix else obj["Key"]
+                    # ponytail: fnmatch `*` also matches "/" (Path.glob in the filesystem source does not); use a
+                    # segment-aware matcher if S3 and local globs must select exactly the same files.
                     if fnmatch.fnmatchcase(rel, self.pattern):
                         found.append((rel, obj["ETag"].strip('"'), obj["Key"]))
         except (BotoCoreError, ClientError) as e:
