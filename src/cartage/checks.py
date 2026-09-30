@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from cartage.config import Project
 from cartage.core import CartageError
 from cartage.runner import prepare
+from cartage.secrets import mask
 from cartage.transforms import load_steps
 
 
@@ -17,7 +18,7 @@ class Check:
 
 
 def _failed(label: str, error: CartageError) -> Check:
-    return Check(label, False, error.message + (f" (hint: {error.hint})" if error.hint else ""))
+    return Check(label, False, mask(error.message + (f" (hint: {error.hint})" if error.hint else "")))
 
 
 def check_pipeline(project: Project, ref: str, env: str | None) -> tuple[str, list[Check]]:

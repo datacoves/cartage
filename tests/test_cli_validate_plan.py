@@ -57,3 +57,24 @@ def test_plan_rich_output(project):
     result = cli(project, "plan", "materials", "--engine", "python", "-n", "1")
     assert result.exit_code == 0, result.output
     assert "BAPI payload" in result.output and "HEADDATA" in result.output
+
+
+def test_failed_check_masks_secrets(tmp_path):
+    from cartage.checks import _failed
+    from cartage.core import CartageError
+    from cartage.secrets import Secrets
+
+    Secrets(tmp_path, environ={"CARTAGE_SECRET__X__Y": "hunter2value"}).resolve("${secret:x.y}", "t")
+    detail = _failed("lbl", CartageError("login failed for hunter2value")).detail
+    assert "****" in detail and "hunter2value" not in detail
+
+
+def test_plan_never_prints_resolved_secrets(project, monkeypatch):
+    conn = project / "connections.yaml"
+    conn.write_text(conn.read_text().replace(
+        'dev: { transport: mock, client: "100" }', 'dev: { transport: mock, client: "${secret:sap.client}" }'))
+    monkeypatch.setenv("CARTAGE_SECRET__SAP__CLIENT", "hunter2client")
+    for extra in ([], ["--json"]):
+        result = cli(project, "plan", "materials", "--engine", "python", *extra)
+        assert result.exit_code == 0, result.output
+        assert "${secret:sap.client}" in result.output and "hunter2client" not in result.output
