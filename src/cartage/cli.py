@@ -3,13 +3,15 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import asdict
 from pathlib import Path
 
 import typer
 
 from cartage import __version__, registry, ui
+from cartage.checks import check_pipeline
 from cartage.config import load_project
-from cartage.runner import prepare, run_pipeline
+from cartage.runner import prepare, preview, run_pipeline
 from cartage.scaffold import init_project
 
 app = typer.Typer(
@@ -93,3 +95,39 @@ def run(
             ui.run_summary(result, prep.pipeline.name, prep.env)
     if result.errors:
         raise typer.Exit(1)
+
+
+@app.command()
+def validate(
+    pipelines: list[str] | None = typer.Argument(None, help="Pipelines to check (default: all)."),
+    env: str | None = EnvOption,
+    as_json: bool = JsonOption,
+) -> None:
+    """Check pipelines, connections, secrets, transforms and mappings without moving data."""
+    with ui.handle_errors(OPTS.debug):
+        project = load_project(OPTS.project_dir)
+        refs = pipelines or [str(p) for p in project.pipeline_files()]
+        results = [check_pipeline(project, ref, env) for ref in refs]
+    if as_json:
+        typer.echo(json.dumps([{"pipeline": name, "checks": [asdict(c) for c in checks]} for name, checks in results]))
+    else:
+        ui.checks_tree(results)
+    if any(not c.ok for _, checks in results for c in checks):
+        raise typer.Exit(2)
+
+
+@app.command()
+def plan(
+    pipeline: str = typer.Argument(..., help="Pipeline file or name."),
+    env: str | None = EnvOption,
+    engine: str | None = EngineOption,
+    n: int = typer.Option(3, "-n", help="Number of records to preview."),
+    as_json: bool = JsonOption,
+) -> None:
+    """Dry run: show files to process and the first records before/after transforms and as BAPI payloads."""
+    with ui.handle_errors(OPTS.debug):
+        data = preview(prepare(load_project(OPTS.project_dir), pipeline, env, engine), n)
+    if as_json:
+        typer.echo(json.dumps(data, default=str))
+    else:
+        ui.plan_view(data)

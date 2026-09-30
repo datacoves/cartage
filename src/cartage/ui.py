@@ -1,7 +1,9 @@
 """Rich console output shared by all commands."""
 from __future__ import annotations
 
+import json
 from contextlib import contextmanager
+from itertools import zip_longest
 from pathlib import Path
 from typing import Iterator
 
@@ -11,8 +13,10 @@ from rich.console import Console, Group
 from rich.markup import escape
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
+from rich.tree import Tree
 
 from cartage.core import CartageError, RecordError, RunResult
 from cartage.secrets import mask
@@ -113,3 +117,41 @@ def run_summary(result: RunResult, pipeline: str, env: str) -> None:
         if len(result.errors) > MAX_ERRORS:
             console.print(Text(f"… and {len(result.errors) - MAX_ERRORS} more", style="dim"))
         console.print(Text(f"rejects: {result.rejects_path}", style="dim"))
+
+
+def checks_tree(results: list) -> None:
+    for name, checks in results:
+        ok = all(c.ok for c in checks)
+        tree = Tree(Text.assemble(("✔ " if ok else "✘ ", "green" if ok else "red"), (name, "bold")))
+        for c in checks:
+            tree.add(Text.assemble(("✔ " if c.ok else "✘ ", "green" if c.ok else "red"), c.label,
+                                   (f"  {c.detail}", "dim" if c.ok else "red")))
+        console.print(tree)
+
+
+def _json(obj) -> Syntax:
+    return Syntax(json.dumps(obj, indent=2, ensure_ascii=False, default=str), "json",
+                  theme="ansi_dark", background_color="default", word_wrap=True)
+
+
+def plan_view(data: dict) -> None:
+    console.print(Text.assemble(("cartage plan ", "bold"), data["pipeline"], "  env ", (data["env"], "cyan"),
+                                "  engine ", (data["engine"], "cyan")))
+    console.print(Panel(_json({"source": data["source"], "destination": data["destination"]}),
+                        title="connections (secrets stay as references)", title_align="left"))
+    if data["files"] is not None:
+        files = Table("file", "action", box=box.SIMPLE_HEAD)
+        for f in data["files"]:
+            files.add_row(Text(f["file"]), Text("process", style="green") if f["process"]
+                          else Text("skip (already loaded)", style="dim"))
+        console.print(files)
+    if not data["records"]:
+        console.print(Text("Nothing to process.", style="dim"))
+        return
+    table = Table("source record", "after transforms", "BAPI payload", box=box.SIMPLE_HEAD,
+                  title=f"first {len(data['records'])} record(s)", title_justify="left")
+    for row in zip_longest(data["records"], data["transformed"], data["payloads"]):
+        table.add_row(*(_json(x) if x is not None else Text("—", style="dim") for x in row))
+    console.print(table)
+    for message in data["transform_errors"]:
+        console.print(Text(f"transform error: {message}", style="red"))
