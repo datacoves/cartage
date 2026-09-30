@@ -198,7 +198,8 @@ def state_reset(
     with ui.handle_errors(OPTS.debug):
         store, name, env = _store(pipeline, env)
     if not yes and not typer.confirm(f"Delete stored state for {name} ({env})?"):
-        raise typer.Exit(1)
+        ui.console.print("cancelled")
+        raise typer.Exit(0)
     with ui.handle_errors(OPTS.debug):
         store.reset()
     ui.console.print(ui.Text.assemble(("✔ ", "green"), f"state for {name} ({env}) deleted"))

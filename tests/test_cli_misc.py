@@ -38,8 +38,10 @@ def test_state_show_and_reset(project):
 
 
 def test_state_reset_asks_for_confirmation(project):
+    cli(project, "run", "materials", "--engine", "python", "--advance-state", "--json")
     result = runner.invoke(app, ["-C", str(project), "state", "reset", "materials"], input="n\n")
-    assert result.exit_code == 1
+    assert result.exit_code == 0 and "cancelled" in result.output
+    assert json.loads(cli(project, "state", "show", "materials").output)["state"]  # nothing deleted
 
 
 def test_connections_test_masks_secrets(project, monkeypatch):
