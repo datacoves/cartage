@@ -1,0 +1,42 @@
+import json
+
+from typer.testing import CliRunner
+
+from cartage.cli import app
+
+runner = CliRunner()
+
+
+def cli(project, *args):
+    return runner.invoke(app, ["-C", str(project), *args])
+
+
+def test_connections_list_shows_references_not_values(project, monkeypatch):
+    monkeypatch.setenv("CARTAGE_SECRET__SAP__USER", "realuser")
+    result = cli(project, "connections", "list")
+    assert result.exit_code == 0
+    assert "sap_erp" in result.output and "local_files" in result.output
+    assert "${secret:sap.user}" in result.output and "realuser" not in result.output
+
+
+def test_connections_test(project, monkeypatch):
+    ok = cli(project, "connections", "test", "sap_erp")
+    assert ok.exit_code == 0 and "mock (in-process)" in ok.output
+    assert "1 file" in cli(project, "connections", "test", "local_files").output
+    monkeypatch.setenv("CARTAGE_SECRET__SAP__USER", "u")
+    monkeypatch.setenv("CARTAGE_SECRET__SAP__PASSWD", "p")
+    rfc = cli(project, "connections", "test", "sap_erp", "--env", "prd")
+    assert rfc.exit_code == 2 and "'rfc' is not available" in rfc.output
+
+
+def test_state_show_and_reset(project):
+    cli(project, "run", "materials", "--engine", "python", "--advance-state", "--json")
+    shown = cli(project, "state", "show", "materials")
+    assert shown.exit_code == 0 and "materials/materials.csv" in shown.output
+    assert cli(project, "state", "reset", "materials", "--yes").exit_code == 0
+    assert json.loads(cli(project, "state", "show", "materials").output) == {"state": {}, "dlt_archive": False}
+
+
+def test_state_reset_asks_for_confirmation(project):
+    result = runner.invoke(app, ["-C", str(project), "state", "reset", "materials"], input="n\n")
+    assert result.exit_code == 1

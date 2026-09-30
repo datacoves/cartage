@@ -7,12 +7,16 @@ from dataclasses import asdict
 from pathlib import Path
 
 import typer
+from rich.panel import Panel
 
 from cartage import __version__, registry, ui
 from cartage.checks import check_pipeline
 from cartage.config import load_project
-from cartage.runner import prepare, preview, run_pipeline
+from cartage.adapters.destinations.sap.transports.mock import make_server
+from cartage.runner import prepare, preview, run_pipeline, state_backend
 from cartage.scaffold import init_project
+from cartage.secrets import Secrets
+from cartage.state import StateStore
 
 app = typer.Typer(
     name="cartage",
@@ -131,3 +135,76 @@ def plan(
         typer.echo(json.dumps(data, default=str))
     else:
         ui.plan_view(data)
+
+
+connections_app = typer.Typer(help="Inspect and test connections.", no_args_is_help=True)
+state_app = typer.Typer(help="Inspect or reset incremental state.", no_args_is_help=True)
+sap_app = typer.Typer(help="SAP helpers.", no_args_is_help=True)
+app.add_typer(connections_app, name="connections")
+app.add_typer(state_app, name="state")
+app.add_typer(sap_app, name="sap")
+
+
+@connections_app.command("list")
+def connections_list(env: str | None = EnvOption) -> None:
+    """List connections (secrets are shown as references)."""
+    with ui.handle_errors(OPTS.debug):
+        ui.connections_table(load_project(OPTS.project_dir), env)
+
+
+@connections_app.command("test")
+def connections_test(name: str = typer.Argument(..., help="Connection name."), env: str | None = EnvOption) -> None:
+    """Check that a connection is reachable."""
+    with ui.handle_errors(OPTS.debug):
+        project = load_project(OPTS.project_dir)
+        env = project.resolve_env(env)
+        ctype, config, where = project.connection(name, env)
+        config = Secrets(project.root).resolve(config, where)
+        message = registry.connection_class(ctype).check_connection(config, project.root)
+    ui.console.print(ui.Text.assemble(("✔ ", "green"), (name, "bold"), f" ({ctype}, {env}): ", message))
+
+
+def _store(pipeline: str, env: str | None) -> tuple[StateStore, str, str]:
+    project = load_project(OPTS.project_dir)
+    env = project.resolve_env(env)
+    name = project.load_pipeline(pipeline).name
+    return StateStore(state_backend(project, env, Secrets(project.root)), name, env), name, env
+
+
+@state_app.command("show")
+def state_show(pipeline: str = typer.Argument(..., help="Pipeline file or name."), env: str | None = EnvOption) -> None:
+    """Show stored state (processed files, dlt archive, last run)."""
+    with ui.handle_errors(OPTS.debug):
+        store, _, _ = _store(pipeline, env)
+        typer.echo(json.dumps(store.show(), indent=2))
+
+
+@state_app.command("reset")
+def state_reset(
+    pipeline: str = typer.Argument(..., help="Pipeline file or name."),
+    env: str | None = EnvOption,
+    yes: bool = typer.Option(False, "--yes", "-y", help="Do not ask for confirmation."),
+) -> None:
+    """Delete stored state so the next run starts from scratch."""
+    with ui.handle_errors(OPTS.debug):
+        store, name, env = _store(pipeline, env)
+    if not yes and not typer.confirm(f"Delete stored state for {name} ({env})?"):
+        raise typer.Exit(1)
+    with ui.handle_errors(OPTS.debug):
+        store.reset()
+    ui.console.print(ui.Text.assemble(("✔ ", "green"), f"state for {name} ({env}) deleted"))
+
+
+@sap_app.command("mock")
+def sap_mock(port: int = typer.Option(8765, "--port", "-p", help="Port to listen on.")) -> None:
+    """Run a mock SAP server that validates BAPI calls and logs them live."""
+    server = make_server(port, on_call=ui.log_bapi_call)
+    ui.console.print(Panel(f"Mock SAP listening on http://127.0.0.1:{port}\n"
+                           f"Use it from a connection:  transport: mock, url: http://localhost:{port}",
+                           title="cartage sap mock", title_align="left", border_style="green"))
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        ui.console.print("stopped")
+    finally:
+        server.server_close()

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from contextlib import contextmanager
+from datetime import datetime
 from itertools import zip_longest
 from pathlib import Path
 from typing import Iterator
@@ -155,3 +156,23 @@ def plan_view(data: dict) -> None:
     console.print(table)
     for message in data["transform_errors"]:
         console.print(Text(f"transform error: {message}", style="red"))
+
+
+def connections_table(project, env: str | None) -> None:
+    table = Table("name", "type", "env", "settings", box=box.SIMPLE_HEAD)
+    for name, conn in sorted(project.connections.items()):
+        for conn_env, settings in conn.envs.items():
+            if env is None or env == conn_env:
+                table.add_row(name, conn.type, conn_env, Text(json.dumps(settings)))
+    console.print(table)
+
+
+def log_bapi_call(function: str, params: dict, result: dict) -> None:
+    now = f"{datetime.now():%H:%M:%S} "
+    returned = result.get("RETURN", [])
+    if not returned:
+        console.print(Text.assemble((now, "dim"), (function, "dim")))
+    for r in returned:
+        style = {"S": "green", "W": "yellow"}.get(r.get("TYPE"), "red")
+        console.print(Text.assemble((now, "dim"), (function, "bold"), "  ",
+                                    (f"{r.get('TYPE')} {r.get('ID')} {r.get('NUMBER')}", style), "  ", r.get("MESSAGE", "")))
