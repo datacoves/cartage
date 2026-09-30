@@ -83,3 +83,19 @@ def test_run_from_s3_with_state_on_s3(s3, project, monkeypatch):
     assert json.loads(result.stdout)["read"] == 20
     state = json.loads(s3.get_object(Bucket="demo", Key="state/materials_to_sap/dev/state.json")["Body"].read())
     assert list(state["files"]) == ["materials/materials.csv"]
+
+
+def test_state_backend_connection_errors_are_fatal():
+    from botocore.exceptions import EndpointConnectionError
+
+    class Broken:
+        def __getattr__(self, name):
+            def fail(**kw):
+                raise EndpointConnectionError(endpoint_url="http://x")
+            return fail
+
+    backend = S3StateBackend(Broken(), "demo", "state")
+    with pytest.raises(FatalRunError):
+        backend.get("k")
+    with pytest.raises(FatalRunError):
+        backend.delete("k")

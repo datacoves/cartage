@@ -41,6 +41,8 @@ class S3StateBackend:
             if e.response.get("Error", {}).get("Code") in ("NoSuchKey", "404"):
                 return None
             raise FatalRunError(f"Cannot read state from s3://{self.bucket}/{_join(self.prefix, key)}: {e}") from e
+        except BotoCoreError as e:
+            raise FatalRunError(f"Cannot read state from s3://{self.bucket}/{_join(self.prefix, key)}: {e}") from e
 
     def put(self, key: str, data: bytes) -> None:
         try:
@@ -49,7 +51,10 @@ class S3StateBackend:
             raise FatalRunError(f"Cannot write state to s3://{self.bucket}/{_join(self.prefix, key)}: {e}") from e
 
     def delete(self, key: str) -> None:
-        self.client.delete_object(Bucket=self.bucket, Key=_join(self.prefix, key))
+        try:
+            self.client.delete_object(Bucket=self.bucket, Key=_join(self.prefix, key))
+        except (BotoCoreError, ClientError) as e:
+            raise FatalRunError(f"Cannot delete state at s3://{self.bucket}/{_join(self.prefix, key)}: {e}") from e
 
 
 class S3Source:
