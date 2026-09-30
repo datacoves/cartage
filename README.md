@@ -15,7 +15,7 @@ pip install "cartage[dlt]"
 cartage init demo && cd demo
 cartage validate
 cartage plan materials        # dry run: records before/after transforms and the BAPI payloads
-cartage run materials         # loads 20 materials into the mock SAP; 2 fail on purpose
+cartage run materials         # reads 20 rows, filters 2, sends 18: 16 load, 2 fail on purpose (exit 1)
 cartage run materials --advance-state
 cartage run materials         # incremental: nothing new to load
 cartage generate              # dags/materials_to_sap.py
@@ -34,6 +34,11 @@ in `connections.yaml`, and run the pipeline in another terminal.
 | `transforms/*.py` | `map` / `filter` / `batch` functions referenced as `module:function` |
 | `templates/airflow/dag.py.j2` | optional DAG template override (`{% extends "cartage/airflow_dag.py.j2" %}`) |
 | `.cartage/` | git-ignored: `secrets.yaml`, `state/`, `rejects/` |
+
+## Batches
+
+- `batch` transforms see one source batch at a time (default 100 rows, `batch_size` source option), never across files.
+- `commit: per_batch` commits each batch the engine hands to the destination (the dlt engine re-chunks at 100).
 
 ## Secrets
 
