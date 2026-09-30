@@ -1,0 +1,24 @@
+# Subset of BAPI_MATERIAL_SAVEDATA used for mapping validation and by the mock transport.
+# Lengths follow the classic (ECC) DDIC structures; allowed values are a demo subset.
+function: BAPI_MATERIAL_SAVEDATA
+object: material
+key: HEADDATA.MATERIAL
+parameters:
+  HEADDATA:
+    kind: structure
+    fields:
+      MATERIAL:   { length: 18, required: true }
+      IND_SECTOR: { length: 1, required: true, allowed: [M, C, P, A] }
+      MATL_TYPE:  { length: 4, required: true, allowed: [FERT, HALB, HAWA, ROH] }
+      BASIC_VIEW: { length: 1, allowed: ["X", ""] }
+  CLIENTDATA:
+    kind: structure
+    x_structure: CLIENTDATAX
+    fields:
+      BASE_UOM:   { length: 3, required: true, allowed: [EA, KG, L, M, PC] }
+      MATL_GROUP: { length: 9 }
+  MATERIALDESCRIPTION:
+    kind: table
+    fields:
+      LANGU_ISO: { length: 2 }
+      MATL_DESC: { length: 40 }
