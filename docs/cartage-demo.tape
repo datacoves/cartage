@@ -30,13 +30,16 @@ Enter
 Wait+Line />$/
 Sleep 2s
 
-Type "Next, preview a transformed row and its SAP payload."
+Type "Watch the UOM conversion: KGS to KG."
 Sleep 1s
-Backspace 53
-Type "cartage plan materials -n 1"
+Backspace 36
+Type "cartage plan materials -n 3"
 Enter
 Wait+Line />$/
-Sleep 4s
+ScrollUp 30
+Sleep 1s
+ScrollDown@100ms 30
+Sleep 2s
 
 Type "Now generate the production Airflow DAG."
 Sleep 1s

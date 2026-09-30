@@ -5,6 +5,7 @@ import json
 import traceback
 from contextlib import contextmanager
 from datetime import datetime
+from io import StringIO
 from itertools import zip_longest
 from pathlib import Path
 from typing import Iterator
@@ -20,6 +21,7 @@ from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
 from rich.tree import Tree
+from ruamel.yaml import YAML
 
 from cartage.core import CartageError, RecordError, RunResult
 from cartage.secrets import mask
@@ -146,6 +148,17 @@ def _json(obj) -> Syntax:
                   theme="ansi_dark", background_color="default", word_wrap=True)
 
 
+def _yaml(obj) -> Syntax:
+    plain = json.loads(json.dumps(obj, ensure_ascii=False, default=str))
+    stream = StringIO()
+    yaml = YAML(typ="safe")
+    yaml.default_flow_style = False
+    yaml.sort_base_mapping_type_on_output = False
+    yaml.width = 100
+    yaml.dump(plain, stream)
+    return Syntax(stream.getvalue(), "yaml", theme="ansi_dark", background_color="default", word_wrap=True)
+
+
 def plan_view(data: dict) -> None:
     console.print(Text.assemble(("cartage plan ", "bold"), data["pipeline"], "  env ", (data["env"], "cyan"),
                                 "  engine ", (data["engine"], "cyan")))
@@ -160,11 +173,11 @@ def plan_view(data: dict) -> None:
     if not data["records"]:
         console.print(Text("Nothing to process.", style="dim"))
         return
-    table = Table("source record", "after transforms", "BAPI payload", box=box.SIMPLE_HEAD,
-                  title=f"first {len(data['records'])} record(s)", title_justify="left")
-    for row in zip_longest(data["records"], data["transformed"], data["payloads"]):
-        table.add_row(*(_json(x) if x is not None else Text("—", style="dim") for x in row))
-    console.print(table)
+    console.print(Text(f"first {len(data['records'])} record(s)", style="bold"))
+    for index, row in enumerate(zip_longest(data["records"], data["transformed"], data["payloads"]), start=1):
+        record = {label: value for label, value in zip(("source", "transformed", "bapi"), row) if value is not None}
+        console.rule(f"record {index}", style="dim")
+        console.print(_yaml(record))
     for message in data["transform_errors"]:
         console.print(Text(f"transform error: {message}", style="red"))
 

@@ -54,9 +54,12 @@ def test_plan_json_previews_payloads_without_state(project):
 
 
 def test_plan_rich_output(project):
-    result = cli(project, "plan", "materials", "--engine", "python", "-n", "1")
+    result = cli(project, "plan", "materials", "--engine", "python", "-n", "3")
     assert result.exit_code == 0, result.output
-    assert "BAPI payload" in result.output and "HEADDATA" in result.output
+    assert "record 1" in result.output and "record 3" in result.output
+    assert "source:" in result.output and "transformed:" in result.output and "bapi:" in result.output
+    assert "uom: KGS" in result.output and "uom: KG" in result.output
+    assert "HEADDATA:" in result.output and "MATERIAL: '100003'" in result.output
 
 
 def test_failed_check_masks_secrets(tmp_path):
