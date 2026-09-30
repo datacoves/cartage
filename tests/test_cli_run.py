@@ -6,7 +6,7 @@ from typer.testing import CliRunner
 from cartage.cli import app
 
 runner = CliRunner()
-ENGINES = ["python"]
+ENGINES = ["python", "dlt"]
 
 
 def run(project, *args):
