@@ -21,6 +21,7 @@ class FatalRunError(CartageError):
     """The run cannot continue: transport/connection failure, state store, or on_error: fail."""
 
     exit_code = 3
+    result: "RunResult | None" = None  # partial result (what was committed so far); engines attach it
 
 
 @dataclass

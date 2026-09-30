@@ -12,10 +12,11 @@ from rich.panel import Panel
 from cartage import __version__, registry, ui
 from cartage.checks import check_pipeline
 from cartage.config import load_project
+from cartage.core import FatalRunError
 from cartage.adapters.destinations.sap.transports.mock import make_server
 from cartage.runner import prepare, preview, run_pipeline, state_backend
 from cartage.scaffold import init_project
-from cartage.secrets import Secrets
+from cartage.secrets import Secrets, mask
 from cartage.state import StateStore
 
 app = typer.Typer(
@@ -88,15 +89,23 @@ def run(
     """Run a pipeline."""
     with ui.handle_errors(OPTS.debug):
         prep = prepare(load_project(OPTS.project_dir), pipeline, env, engine)
-        if as_json:
-            result = run_pipeline(prep, advance_state=advance_state, full_refresh=full_refresh)
-            typer.echo(json.dumps(result.to_dict(), default=str))
-        else:
-            ui.run_header(prep.pipeline.name, prep.env, prep.engine_name)
-            with ui.RunProgress(prep.pipeline.name) as progress:
-                result = run_pipeline(prep, advance_state=advance_state, full_refresh=full_refresh,
-                                      on_progress=progress.update)
-            ui.run_summary(result, prep.pipeline.name, prep.env)
+        try:
+            if as_json:
+                result = run_pipeline(prep, advance_state=advance_state, full_refresh=full_refresh)
+                typer.echo(json.dumps(result.to_dict(), default=str))
+            else:
+                ui.run_header(prep.pipeline.name, prep.env, prep.engine_name)
+                with ui.RunProgress(prep.pipeline.name) as progress:
+                    result = run_pipeline(prep, advance_state=advance_state, full_refresh=full_refresh,
+                                          on_progress=progress.update)
+                ui.run_summary(result, prep.pipeline.name, prep.env)
+        except FatalRunError as e:  # report what was committed before the run stopped (spec §6)
+            if e.result is not None:
+                if as_json:
+                    typer.echo(json.dumps({**e.result.to_dict(), "fatal": mask(e.message)}, default=str))
+                else:
+                    ui.run_summary(e.result, prep.pipeline.name, prep.env, fatal=True)
+            raise
     if result.errors:
         raise typer.Exit(1)
 

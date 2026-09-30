@@ -68,9 +68,10 @@ class DltEngine:
         try:
             pipeline.run(piped, schema=schema)
         except Exception as e:
-            if fatal:
-                raise fatal[0] from e
-            raise FatalRunError(f"dlt pipeline failed: {e}") from e
+            error = fatal[0] if fatal else FatalRunError(f"dlt pipeline failed: {e}")
+            if isinstance(error, FatalRunError):
+                error.result = result
+            raise error from e
         # Loaded packages and the run trace hold copies of the data; keep only dlt state in the archive.
         shutil.rmtree(state.dlt_dir / name / "load" / "loaded", ignore_errors=True)
         (state.dlt_dir / name / "trace.pickle").unlink(missing_ok=True)

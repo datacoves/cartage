@@ -70,6 +70,9 @@ def test_unreachable_mock_server_exits_3(project, engine):
     result = run(project, "--engine", engine)
     assert result.exit_code == 3, result.output
     assert "Cannot reach mock SAP" in result.output
+    assert "materials_to_sap · dev" in result.output and "run aborted" in result.output  # partial summary
+    data = json.loads(run(project, "--engine", engine, "--json").stdout)
+    assert data["read"] == 20 and data["ok"] == 0 and "Cannot reach mock SAP" in data["fatal"]
 
 
 def test_unexpected_engine_error_exits_3_without_traceback(project):

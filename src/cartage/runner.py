@@ -79,6 +79,10 @@ def run_pipeline(prep: Prepared, *, advance_state: bool = False, full_refresh: b
         try:
             result = prep.engine.run(prep.pipeline.name, prep.source, prep.steps, prep.destination, state,
                                      on_progress or (lambda _: None))
+        except FatalRunError as e:
+            if e.result is not None and e.result.errors:  # keep the partial rejects; state is never saved
+                e.result.rejects_path = str(write_rejects(prep.project.root, prep.pipeline.name, new_run_id(), e.result.errors))
+            raise
         except CartageError:
             raise
         except Exception as e:

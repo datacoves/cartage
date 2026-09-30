@@ -3,7 +3,7 @@ import json
 import pytest
 
 from cartage.config import load_project
-from cartage.core import CartageError
+from cartage.core import CartageError, FatalRunError, RecordError, RunResult
 from cartage.runner import prepare, run_pipeline
 
 STATE = ".cartage/state/materials_to_sap/dev/state.json"
@@ -48,3 +48,19 @@ def test_state_connection_must_support_state(project):
         "dev: { path: .cartage/state }", "dev: { connection: sap_erp }"))
     with pytest.raises(CartageError, match="cannot store state"):
         prepare(load_project(project), "materials", engine="python")
+
+
+class _FailingEngine:
+    def run(self, *args):
+        e = FatalRunError("SAP down")
+        e.result = RunResult(read=5, sent=3, ok=2, errors=[RecordError(stage="destination", message="bad")])
+        raise e
+
+
+def test_fatal_run_writes_partial_rejects_and_keeps_state(project):
+    prep = prepare(load_project(project), "materials", engine="python")
+    prep.engine = _FailingEngine()
+    with pytest.raises(FatalRunError) as info:
+        run_pipeline(prep, advance_state=True)
+    assert len(open(info.value.result.rejects_path).read().splitlines()) == 1
+    assert not (project / STATE).exists()

@@ -102,21 +102,23 @@ def _code(error: RecordError) -> str:
     return " ".join(str(first.get(k, "")) for k in ("TYPE", "ID", "NUMBER")) if first else "—"
 
 
-def run_summary(result: RunResult, pipeline: str, env: str) -> None:
+def run_summary(result: RunResult, pipeline: str, env: str, fatal: bool = False) -> None:
     counts = Table(box=box.SIMPLE_HEAD)
     for col in ("read", "filtered", "sent", "ok", "warnings", "errors"):
         counts.add_column(col, justify="right")
     counts.add_row(str(result.read), str(result.filtered), str(result.sent), Text(str(result.ok), style="green"),
                    Text(str(result.warnings), style="yellow" if result.warnings else ""),
                    Text(str(len(result.errors)), style="red" if result.errors else ""))
-    if result.errors:
+    if fatal:
+        status = Text("✘ run aborted by a fatal error; counts show what was done before it", style="red")
+    elif result.errors:
         status = Text(f"⚠ completed with {len(result.errors)} record error(s)", style="yellow")
     else:
         status = Text("✔ completed", style="green")
-    state = ("state saved" if result.state_advanced
+    state = ("state saved" if result.state_advanced else "state not advanced" if fatal
              else "state not advanced: fix the rejects and rerun, or pass --advance-state")
     console.print(Panel(Group(status, counts, Text(state, style="dim")), title=f"{pipeline} · {env}",
-                        title_align="left", border_style="yellow" if result.errors else "green"))
+                        title_align="left", border_style="red" if fatal else "yellow" if result.errors else "green"))
     if result.read == 0:
         console.print(Text("No records to process.", style="dim"))
     if result.errors:
