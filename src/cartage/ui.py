@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Iterator
 
 import typer
@@ -42,3 +43,12 @@ def plugins_table(found: dict[str, dict]) -> None:
         for name, ep in sorted(eps.items()):
             table.add_row(kind, name, ep.dist.name if ep.dist else "?", Text(ep.value))
     console.print(table)
+
+
+def init_done(directory: Path, created: list[Path]) -> None:
+    body = Text()
+    body.append(f"Created {len(created)} files in {directory}\n\n", style="green")
+    body.append("Next steps:\n", style="bold")
+    for cmd in (f"cd {directory}", "cartage validate", "cartage plan materials", "cartage run materials"):
+        body.append(f"  $ {cmd}\n", style="cyan")
+    console.print(Panel(body, title="cartage init", title_align="left", border_style="green"))

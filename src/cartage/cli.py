@@ -7,6 +7,7 @@ from pathlib import Path
 import typer
 
 from cartage import __version__, registry, ui
+from cartage.scaffold import init_project
 
 app = typer.Typer(
     name="cartage",
@@ -51,3 +52,11 @@ def main(
 def plugins() -> None:
     """List installed sources, destinations, engines and orchestrators."""
     ui.plugins_table({kind: registry.available(kind) for kind in registry.KINDS})
+
+
+@app.command()
+def init(directory: Path = typer.Argument(Path("."), help="Folder for the new project.")) -> None:
+    """Create a demo project: CSV materials → transforms → mock SAP."""
+    with ui.handle_errors(OPTS.debug):
+        created = init_project(directory)
+    ui.init_done(directory, created)

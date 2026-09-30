@@ -1,0 +1,29 @@
+# Named connections, one settings block per environment.
+# Never put secret values here: reference them as ${secret:dotted.key} or ${env:VAR}.
+connections:
+  local_files:
+    type: filesystem
+    envs:
+      dev: { path: ./data }
+      prd: { path: ./data }
+
+  sap_erp:
+    type: sap
+    envs:
+      dev: { transport: mock, client: "100" }
+      prd:
+        transport: rfc
+        ashost: sap.example.com
+        sysnr: "00"
+        client: "100"
+        user: ${secret:sap.user}
+        passwd: ${secret:sap.passwd}
+
+  # materials_s3:
+  #   type: s3
+  #   envs:
+  #     dev:
+  #       bucket: my-bucket
+  #       region: eu-west-1
+  #       access_key_id: ${secret:aws.access_key_id}
+  #       secret_access_key: ${secret:aws.secret_access_key}

@@ -1,0 +1,28 @@
+name: materials_to_sap
+source:
+  connection: local_files
+  format: csv
+  path: materials/*.csv
+  incremental: true
+transforms:
+  - map: transforms.materials:normalize_uom
+  - filter: transforms.materials:is_active
+  - batch: transforms.materials:dedupe
+    with: { key: material }
+destination:
+  connection: sap_erp
+  bapi: BAPI_MATERIAL_SAVEDATA
+  mapping:
+    material: HEADDATA.MATERIAL
+    industry: HEADDATA.IND_SECTOR
+    type: HEADDATA.MATL_TYPE
+    description: MATERIALDESCRIPTION[].MATL_DESC
+    uom: CLIENTDATA.BASE_UOM
+  constants:
+    MATERIALDESCRIPTION[].LANGU_ISO: EN
+    HEADDATA.BASIC_VIEW: X
+  commit: per_record
+schedule:
+  airflow:
+    schedule: "0 3 * * *"
+    tags: [sap, materials]

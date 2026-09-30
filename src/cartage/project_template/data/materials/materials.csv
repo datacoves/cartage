@@ -1,0 +1,21 @@
+material,industry,type,description,uom,status
+100001,M,FERT,Pump housing,EA,active
+100002,M,FERT,Impeller 200mm,EA,active
+100003,M,ROH,Stainless steel sheet,KGS,active
+100004,M,ROH,Gasket rubber,PCS,active
+100005,M,HALB,Shaft assembly,EA,active
+100006,M,HAWA,Bearing 6204,EA,active
+100007,M,FERT,Motor 5kW,EA,active
+100008,M,ZXX,Legacy coupling,EA,active
+100009,M,ROH,Copper wire,M,active
+100010,M,ROH,Lubricant oil,L,active
+100011,M,HAWA,Seal kit,EA,obsolete
+100012,M,FERT,Control panel,EA,active
+100013,M,HALB,Rotor,EA,active
+1000140000000000000001,M,FERT,Valve body,EA,active
+100015,M,ROH,Cast iron,KG,active
+100016,M,HAWA,Pressure gauge,EA,active
+100017,M,FERT,Pump unit complete,EA,active
+100018,M,ROH,Paint primer,L,active
+100019,M,HAWA,Cable gland,PC,active
+100007,M,FERT,Motor 5kW (rev B),EA,active
