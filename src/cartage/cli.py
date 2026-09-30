@@ -6,7 +6,7 @@ from pathlib import Path
 
 import typer
 
-from cartage import __version__, ui
+from cartage import __version__, registry, ui
 
 app = typer.Typer(
     name="cartage",
@@ -45,3 +45,9 @@ def main(
     ui.err_console.no_color = no_color
     if verbose:
         logging.basicConfig(level=logging.DEBUG)
+
+
+@app.command()
+def plugins() -> None:
+    """List installed sources, destinations, engines and orchestrators."""
+    ui.plugins_table({kind: registry.available(kind) for kind in registry.KINDS})

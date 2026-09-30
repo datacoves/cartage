@@ -7,6 +7,7 @@ from typing import Iterator
 import typer
 from rich.console import Console
 from rich.panel import Panel
+from rich.table import Table
 from rich.text import Text
 
 from cartage.core import CartageError
@@ -33,3 +34,11 @@ def handle_errors(debug: bool = False) -> Iterator[None]:
         if debug:
             err_console.print_exception()
         raise typer.Exit(e.exit_code) from e
+
+
+def plugins_table(found: dict[str, dict]) -> None:
+    table = Table("kind", "name", "provided by", "target")
+    for kind, eps in found.items():
+        for name, ep in sorted(eps.items()):
+            table.add_row(kind, name, ep.dist.name if ep.dist else "?", Text(ep.value))
+    console.print(table)
