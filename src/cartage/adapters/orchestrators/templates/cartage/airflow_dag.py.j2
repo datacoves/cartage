@@ -33,7 +33,7 @@ with DAG(
 {% block task %}
     {{ operator_class }}(
         task_id="cartage_run",
-        bash_command={{ bash_command | py }} + " --project-dir " + shlex.quote(PROJECT_DIR),
+        bash_command={{ command | py }} + " --project-dir " + shlex.quote(PROJECT_DIR) + " run " + {{ run_args | py }},
 {% if image %}
         executor_config={"pod_override": k8s.V1Pod(spec=k8s.V1PodSpec(containers=[k8s.V1Container(name="base", image={{ image | py }})]))},
 {% endif %}

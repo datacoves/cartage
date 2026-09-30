@@ -94,7 +94,8 @@ class AirflowOrchestrator:
             "operator_args": s["operator_args"],
             "image": s["image"],
             "project_dir": s["project_dir"] or Path(os.path.relpath(project.root, dags_dir)).as_posix(),
-            "bash_command": f"{s['command']} run {shlex.quote(rel)} --env {env_expr}",
+            "command": s["command"],  # global options (--project-dir) must come before `run`, so the template assembles it
+            "run_args": f"{shlex.quote(rel)} --env {env_expr}",
         }
 
     def generate(self, project, pipelines: list, out_dir: Path | None = None) -> dict[Path, str]:

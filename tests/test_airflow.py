@@ -1,4 +1,8 @@
 import json
+import os
+import shlex
+import subprocess
+import sys
 
 from typer.testing import CliRunner
 
@@ -27,7 +31,8 @@ def test_generates_valid_thin_dag(project):
     assert "schedule='0 3 * * *'" in content
     assert "tags=['sap', 'materials']" in content
     assert "default_args = {'owner': 'data-team', 'retries': 1}" in content
-    assert """bash_command="cartage run pipelines/materials.yaml --env {{ var.value.get('cartage_env', 'prd') }}" + """ in content
+    assert ("""bash_command='cartage' + " --project-dir " + shlex.quote(PROJECT_DIR) + " run " + """
+            """"pipelines/materials.yaml --env {{ var.value.get('cartage_env', 'prd') }}",""") in content
     assert "os.path.dirname(__file__), '..'" in content
     assert "k8s" not in content
 
@@ -113,3 +118,18 @@ def test_dag_id_path_traversal_rejected(project):
     result = cli(project, "generate")
     assert result.exit_code == 2
     assert "Invalid Airflow dag_id" in result.output
+
+
+CLEAN_CSV = "material,industry,type,description,uom,status\n100001,M,FERT,Pump housing,EA,active\n100002,M,ROH,Steel,KG,active\n"
+
+
+def test_generated_bash_command_runs(project):
+    """Rebuild the DAG's bash_command as Airflow would (no Airflow needed) and run it."""
+    (project / "data/materials/materials.csv").write_text(CLEAN_CSV)
+    line = next(l for l in generate(project).splitlines() if l.strip().startswith("bash_command="))
+    expr = line.strip().removeprefix("bash_command=").removesuffix(",")
+    command = eval(expr, {"shlex": shlex, "PROJECT_DIR": str(project)})
+    command = command.replace("{{ var.value.get('cartage_env', 'prd') }}", "dev")
+    env = {**os.environ, "PATH": os.path.dirname(sys.executable) + os.pathsep + os.environ["PATH"]}
+    result = subprocess.run(command, shell=True, env=env, capture_output=True, text=True, timeout=300)
+    assert result.returncode == 0, result.stdout + result.stderr
