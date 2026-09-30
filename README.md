@@ -3,6 +3,8 @@
 Declarative data migrations. Describe sources, destinations and pipelines in YAML, put custom logic in plain
 Python, run locally to test, and generate thin Airflow DAGs for production.
 
+![Cartage terminal demo](docs/cartage-demo.gif)
+
 - **Sources:** local CSV folders, S3, and any [dlt](https://dlthub.com) source.
 - **Destinations:** SAP via BAPIs (v0.1 ships a mock SAP; RFC is planned).
 - **Engines:** `python` (a plain loop) and `dlt`.
@@ -34,6 +36,101 @@ in `connections.yaml`, and run the pipeline in another terminal.
 | `transforms/*.py` | `map` / `filter` / `batch` functions referenced as `module:function` |
 | `templates/airflow/dag.py.j2` | optional DAG template override (`{% extends "cartage/airflow_dag.py.j2" %}`) |
 | `.cartage/` | git-ignored: `secrets.yaml`, `state/`, `rejects/` |
+
+## YAML configuration
+
+Cartage uses three YAML layers: `cartage.yaml` sets project-wide defaults, `connections.yaml` defines named services
+per environment, and each `pipelines/*.yaml` file describes one source-to-destination flow.
+
+### `cartage.yaml`
+
+```yaml
+project: inventory
+environments: [dev, prd]
+default_env: dev
+
+defaults:
+  engine: dlt # or python
+
+state:
+  dev: { path: .cartage/state }
+
+orchestrators:
+  airflow:
+    dags_dir: dags
+    default_args: { owner: data-team, retries: 1 }
+```
+
+The `default_env` must be listed in `environments`. A pipeline can override the default engine with its own `engine`.
+State settings are optional; when omitted, Cartage stores local state under `.cartage/state`.
+
+### `connections.yaml`
+
+Connections have a `type` and an `envs` map. Put service-specific settings under the environment where they apply;
+pipelines refer to the connection by name. Keep credentials out of the file and use secret or environment references.
+
+```yaml
+connections:
+  local_files:
+    type: filesystem
+    envs:
+      dev: { path: ./data }
+
+  sap_erp:
+    type: sap
+    envs:
+      dev: { transport: mock, client: "100" }
+      prd:
+        transport: rfc
+        ashost: sap.example.com
+        sysnr: "00"
+        client: "100"
+        user: "${secret:sap.user}"
+        passwd: "${secret:sap.passwd}"
+```
+
+`${secret:key}` resolves from `CARTAGE_SECRET__<KEY>` (dots become double underscores and names are uppercased),
+then `.cartage/secrets.yaml`. `${env:NAME}` reads an environment variable directly. See [Secrets](#secrets) for details.
+
+### `pipelines/*.yaml`
+
+Each pipeline names a source connection, applies an ordered list of transforms, and writes to a destination. A step
+must have exactly one of `map`, `filter`, or `batch`; each reference uses the `module:function` format.
+
+```yaml
+name: materials_to_sap
+source:
+  connection: local_files
+  format: csv
+  path: materials/*.csv
+  incremental: true
+
+transforms:
+  - map: transforms.materials:normalize_uom
+  - filter: transforms.materials:is_active
+  - batch: transforms.materials:dedupe
+    with: { key: material }
+
+destination:
+  connection: sap_erp
+  bapi: BAPI_MATERIAL_SAVEDATA
+  mapping:
+    material: HEADDATA.MATERIAL
+    description: MATERIALDESCRIPTION[].MATL_DESC
+    uom: CLIENTDATA.BASE_UOM
+  constants:
+    MATERIALDESCRIPTION[].LANGU_ISO: EN
+  commit: per_record
+
+schedule:
+  airflow:
+    schedule: "0 3 * * *"
+    tags: [sap, materials]
+```
+
+Source and destination fields other than `connection` are adapter options. Transform functions live in your `transforms/`
+package; `with` passes keyword arguments to the function. The optional `schedule.airflow` block controls DAG generation
+with `cartage generate`. Run `cartage validate` after editing YAML to check the project and references.
 
 ## Batches
 
