@@ -176,3 +176,19 @@ def log_bapi_call(function: str, params: dict, result: dict) -> None:
         style = {"S": "green", "W": "yellow"}.get(r.get("TYPE"), "red")
         console.print(Text.assemble((now, "dim"), (function, "bold"), "  ",
                                     (f"{r.get('TYPE')} {r.get('ID')} {r.get('NUMBER')}", style), "  ", r.get("MESSAGE", "")))
+
+
+def generated(project, files: dict) -> None:
+    if not files:
+        console.print(Text("No pipelines with schedule.airflow — nothing to generate.", style="dim"))
+    for path in files:
+        console.print(Text.assemble(("✔ ", "green"), "wrote ", project.rel(path)))
+
+
+def generate_check(project, files: dict, stale: list) -> None:
+    for path in stale:
+        console.print(Text.assemble(("✘ ", "red"), "out of date: ", project.rel(path)))
+    if stale:
+        console.print(Text("Run: cartage generate", style="dim"))
+    else:
+        console.print(Text.assemble(("✔ ", "green"), f"{len(files)} generated file(s) up to date"))

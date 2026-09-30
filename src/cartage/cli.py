@@ -195,6 +195,36 @@ def state_reset(
     ui.console.print(ui.Text.assemble(("✔ ", "green"), f"state for {name} ({env}) deleted"))
 
 
+@app.command()
+def generate(
+    pipelines: list[str] | None = typer.Argument(None, help="Pipelines (default: all with a schedule)."),
+    target: str = typer.Option("airflow", "--target", "-t", help="Orchestrator."),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Output folder (default: dags_dir setting)."),
+    check: bool = typer.Option(False, "--check", help="Exit 1 if generated files are missing or out of date."),
+    show_context: str | None = typer.Option(None, "--show-context", metavar="PIPELINE", help="Print template variables."),
+) -> None:
+    """Generate orchestrator files (Airflow DAGs) that call `cartage run`."""
+    with ui.handle_errors(OPTS.debug):
+        project = load_project(OPTS.project_dir)
+        orchestrator = registry.get("orchestrators", target)()
+        if show_context:
+            typer.echo(json.dumps(orchestrator.context(project, project.load_pipeline(show_context), output),
+                                  indent=2, default=str))
+            return
+        refs = pipelines or [str(p) for p in project.pipeline_files()]
+        files = orchestrator.generate(project, [project.load_pipeline(r) for r in refs], output)
+        if check:
+            stale = [p for p, content in files.items() if not p.is_file() or p.read_text(encoding="utf-8") != content]
+            ui.generate_check(project, files, stale)
+            if stale:
+                raise typer.Exit(1)
+            return
+        for path, content in files.items():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+        ui.generated(project, files)
+
+
 @sap_app.command("mock")
 def sap_mock(port: int = typer.Option(8765, "--port", "-p", help="Port to listen on.")) -> None:
     """Run a mock SAP server that validates BAPI calls and logs them live."""
