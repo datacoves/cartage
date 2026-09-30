@@ -30,6 +30,13 @@ def validate_params(meta: BapiMeta, params: dict) -> list[dict]:
         if pm is None:
             errors.append(bapiret("E", 101, f"Parameter {pname} does not exist in {meta.function}", pname))
             continue
+        # Check parameter type (structure vs table)
+        if pm.kind == "structure" and value is not None and not isinstance(value, dict):
+            errors.append(bapiret("E", 106, f"Parameter {pname} must be a structure", pname))
+            continue
+        if pm.kind == "table" and value is not None and not isinstance(value, list):
+            errors.append(bapiret("E", 106, f"Parameter {pname} must be a table", pname))
+            continue
         for row in (value or []) if pm.kind == "table" else [value or {}]:
             for fname, v in row.items():
                 fm = pm.fields.get(fname)
@@ -41,6 +48,8 @@ def validate_params(meta: BapiMeta, params: dict) -> list[dict]:
                     errors.append(bapiret("E", 104, f"Value '{v}' is not allowed for {pname}-{fname}", pname, fname))
     for pname, pm in meta.parameters.items():
         value = params.get(pname)
+        if value is None or (pm.kind == "structure" and not isinstance(value, dict)) or (pm.kind == "table" and not isinstance(value, list)):
+            continue
         for row in (value or []) if pm.kind == "table" else [value or {}]:
             for fname, fm in pm.fields.items():
                 if fm.required and not row.get(fname):
@@ -102,6 +111,8 @@ class HttpTransport:
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 return json.loads(response.read())
+        except urllib.error.HTTPError as e:
+            raise FatalRunError(f"Mock SAP at {self.url} returned HTTP {e.code} for {path}", hint="") from e
         except (urllib.error.URLError, OSError) as e:
             reason = getattr(e, "reason", e)
             raise FatalRunError(f"Cannot reach mock SAP at {self.url}: {reason}", hint="Start it with: cartage sap mock") from e
@@ -133,12 +144,18 @@ def make_server(port: int, sap: MockSap | None = None,
         def do_POST(self) -> None:
             if self.path != "/call":
                 return self._send(404, {"error": "not found"})
-            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
-            function, params = body.get("function", ""), body.get("params", {})
-            result = sap.call(function, params)
-            if on_call:
-                on_call(function, params, result)
-            self._send(200, result)
+            try:
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+            except json.JSONDecodeError as e:
+                return self._send(400, {"error": "invalid JSON"})
+            try:
+                function, params = body.get("function", ""), body.get("params", {})
+                result = sap.call(function, params)
+                if on_call:
+                    on_call(function, params, result)
+                self._send(200, result)
+            except Exception as e:
+                self._send(500, {"error": f"{type(e).__name__}: {e}"})
 
         def log_message(self, *args: Any) -> None:
             pass

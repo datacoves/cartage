@@ -82,3 +82,46 @@ def test_make_transport():
         make_transport({"transport": "rfc", "ashost": "h"})
     with pytest.raises(CartageError, match="Unknown SAP transport 'odata'"):
         make_transport({"transport": "odata"})
+
+
+def test_http_bad_path_returns_404():
+    server = make_server(0)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        transport = HttpTransport(f"http://127.0.0.1:{server.server_address[1]}")
+        with pytest.raises(FatalRunError, match="returned HTTP 404") as info:
+            transport._request("/nope")
+        assert "cartage sap mock" not in info.value.hint  # Should not have "start it" hint
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_malformed_json_returns_400():
+    import urllib.request
+    server = make_server(0)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        url = f"http://127.0.0.1:{server.server_address[1]}"
+        request = urllib.request.Request(url + "/call", data=b"not json",
+                                        headers={"Content-Type": "application/json"}, method="POST")
+        try:
+            urllib.request.urlopen(request, timeout=1)
+            assert False, "should have raised HTTPError"
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_structure_parameter_must_be_dict():
+    result = MockSap().call("BAPI_MATERIAL_SAVEDATA", {**GOOD, "HEADDATA": ["x"]})
+    assert result["RETURN"][0]["TYPE"] == "E"
+    assert "must be a structure" in result["RETURN"][0]["MESSAGE"]
+
+
+def test_table_parameter_must_be_list():
+    result = MockSap().call("BAPI_MATERIAL_SAVEDATA", {**GOOD, "MATERIALDESCRIPTION": {"LANGU_ISO": "EN"}})
+    assert result["RETURN"][0]["TYPE"] == "E"
+    assert "must be a table" in result["RETURN"][0]["MESSAGE"]
