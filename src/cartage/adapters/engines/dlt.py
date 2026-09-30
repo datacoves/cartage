@@ -39,6 +39,8 @@ class DltEngine:
             if out.records:
                 yield out.records
 
+        # ponytail: dlt drops None-valued fields before the sink, unlike the python engine. Destinations must treat
+        # a missing key and None the same (the SAP mapping does); preserve nulls explicitly if that ever matters.
         @dlt.destination(name="cartage_sink", batch_size=100, loader_file_format="typed-jsonl", max_parallel_load_jobs=1)
         def sink(items, table) -> None:
             try:
@@ -60,6 +62,7 @@ class DltEngine:
         schema = dlt.Schema(name)
         schema.remove_type_detection("iso_timestamp")  # keep ISO strings as strings, same as the python engine
         pipeline = dlt.pipeline(pipeline_name=name, destination=sink, pipelines_dir=str(state.dlt_dir))
+        pipeline.abort_packages()  # a failed earlier run must not be replayed from the reused dlt_dir
         try:
             pipeline.run(piped, schema=schema)
         except Exception as e:
