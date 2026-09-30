@@ -72,6 +72,14 @@ def test_unreachable_mock_server_exits_3(project, engine):
     assert "Cannot reach mock SAP" in result.output
 
 
+def test_unexpected_engine_error_exits_3_without_traceback(project):
+    with open(project / "data/materials/materials.csv", "a") as f:
+        f.write("100030,M,FERT," + "x" * 140_000 + ",EA,active\n")
+    result = run(project, "--engine", "python")
+    assert result.exit_code == 3, result.output
+    assert "Run failed: Error:" in result.output and "Traceback" not in result.output
+
+
 def test_run_from_subdirectory_by_name(project, monkeypatch):
     monkeypatch.chdir(project / "pipelines")
     result = runner.invoke(app, ["run", "materials", "--engine", "python", "--json"])

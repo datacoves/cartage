@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import json
+import traceback
 from contextlib import contextmanager
 from datetime import datetime
 from itertools import zip_longest
 from pathlib import Path
 from typing import Iterator
 
+import click
 import typer
 from rich import box
 from rich.console import Console, Group
@@ -43,6 +45,13 @@ def handle_errors(debug: bool = False) -> Iterator[None]:
         if debug:
             err_console.print_exception()
         raise typer.Exit(e.exit_code) from e
+    except (typer.Exit, click.exceptions.Exit, click.exceptions.Abort, click.ClickException):
+        raise
+    except Exception as e:
+        show_error(CartageError(f"Unexpected error: {type(e).__name__}: {e}", hint="Re-run with --debug for the traceback"))
+        if debug:
+            err_console.print(Text(mask(traceback.format_exc())))
+        raise typer.Exit(3) from e
 
 
 def plugins_table(found: dict[str, dict]) -> None:

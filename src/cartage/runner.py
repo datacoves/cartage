@@ -8,7 +8,7 @@ from typing import Any, Callable
 
 from cartage import registry
 from cartage.config import Pipeline, Project, StateConfig
-from cartage.core import CartageError, RunResult, StateBackend
+from cartage.core import CartageError, FatalRunError, RunResult, StateBackend
 from cartage.secrets import Secrets
 from cartage.state import LocalStateBackend, StateStore, new_run_id, write_rejects
 from cartage.transforms import Step, apply_steps, load_steps
@@ -76,8 +76,13 @@ def run_pipeline(prep: Prepared, *, advance_state: bool = False, full_refresh: b
                  on_progress: Callable[[RunResult], None] | None = None) -> RunResult:
     state = prep.store.empty() if full_refresh else prep.store.load()
     try:
-        result = prep.engine.run(prep.pipeline.name, prep.source, prep.steps, prep.destination, state,
-                                 on_progress or (lambda _: None))
+        try:
+            result = prep.engine.run(prep.pipeline.name, prep.source, prep.steps, prep.destination, state,
+                                     on_progress or (lambda _: None))
+        except CartageError:
+            raise
+        except Exception as e:
+            raise FatalRunError(f"Run failed: {type(e).__name__}: {e}") from e
         run_id = new_run_id()
         if result.errors:
             result.rejects_path = str(write_rejects(prep.project.root, prep.pipeline.name, run_id, result.errors))

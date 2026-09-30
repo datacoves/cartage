@@ -14,12 +14,12 @@ def test_version():
     assert "cartage 0.1.0" in result.output
 
 
-def _app_raising(error):
+def _app_raising(error, debug=False):
     t = typer.Typer()
 
     @t.command()
     def boom():
-        with ui.handle_errors():
+        with ui.handle_errors(debug):
             raise error
 
     return t
@@ -34,6 +34,22 @@ def test_config_error_renders_panel_and_exits_2():
 
 def test_fatal_error_exits_3():
     assert runner.invoke(_app_raising(FatalRunError("SAP down"))).exit_code == 3
+
+
+def test_unexpected_error_renders_panel_and_exits_3():
+    result = runner.invoke(_app_raising(ValueError("nope")))
+    assert result.exit_code == 3
+    assert "Unexpected error: ValueError: nope" in result.output
+    assert "--debug" in result.output and "Traceback" not in result.output
+
+
+def test_unexpected_error_traceback_only_with_debug():
+    result = runner.invoke(_app_raising(ValueError("nope"), debug=True))
+    assert result.exit_code == 3 and "Traceback" in result.output
+
+
+def test_exit_passes_through_handle_errors():
+    assert runner.invoke(_app_raising(typer.Exit(5))).exit_code == 5
 
 
 def test_brackets_in_messages_are_not_markup():
