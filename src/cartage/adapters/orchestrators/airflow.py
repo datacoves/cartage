@@ -1,7 +1,9 @@
 """Generate thin Airflow DAGs that call `cartage run`. Settings: defaults ← cartage.yaml ← pipeline."""
 from __future__ import annotations
 
+import keyword
 import os
+import re
 import shlex
 from pathlib import Path
 from typing import Any
@@ -25,6 +27,20 @@ DEFAULTS: dict[str, Any] = {
     "project_dir": None,
     "dag_id": None,
 }
+RESERVED_KWARGS = {"task_id", "bash_command", "executor_config"}
+
+
+def _check_literal(name: str, value: Any) -> None:
+    """Values are rendered with repr(), so only plain YAML scalars/lists/dicts are safe."""
+    if isinstance(value, dict):
+        for k, v in value.items():
+            _check_literal(name, k)
+            _check_literal(name, v)
+    elif isinstance(value, list):
+        for v in value:
+            _check_literal(name, v)
+    elif value is not None and not isinstance(value, (str, int, float, bool)):
+        raise CartageError(f"Airflow setting '{name}' contains a {type(value).__name__} value; quote it in YAML")
 
 
 def merge(base: dict, override: dict) -> dict:
@@ -46,6 +62,15 @@ class AirflowOrchestrator:
             raise CartageError(f"Unknown Airflow setting(s): {', '.join(unknown)}", hint=f"Supported: {', '.join(DEFAULTS)}")
         if ":" not in s["operator"]:
             raise CartageError(f"Airflow operator '{s['operator']}' must be 'module.path:ClassName'")
+        for name in ("default_args", "operator_args", "tags", "schedule", "image"):
+            _check_literal(name, s[name])
+        for key in s["operator_args"]:
+            if not isinstance(key, str) or not key.isidentifier() or keyword.iskeyword(key) or key in RESERVED_KWARGS:
+                raise CartageError(f"Invalid Airflow operator_args key '{key}'",
+                                   hint="Keys must be Python identifiers, not keywords, and not task_id, bash_command or executor_config")
+        dag_id = s["dag_id"] or pipeline.name
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+", str(dag_id)) or ".." in str(dag_id):
+            raise CartageError(f"Invalid Airflow dag_id '{dag_id}'", hint="Use letters, digits, '_', '-' and '.' only")
         return s
 
     def context(self, project, pipeline, out_dir: Path | None = None) -> dict:

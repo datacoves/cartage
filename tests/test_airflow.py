@@ -83,3 +83,33 @@ def test_unknown_setting_is_rejected(project):
     result = cli(project, "generate")
     assert result.exit_code == 2
     assert "Unknown Airflow setting(s): imgae" in result.output
+
+
+def _edit_pipeline(project, extra):
+    pipeline = project / "pipelines/materials.yaml"
+    pipeline.write_text(pipeline.read_text().replace("    tags: [sap, materials]\n", "    tags: [sap, materials]\n" + extra))
+
+
+def test_invalid_operator_args_keys_rejected(project):
+    for key in ("pool-x", "task_id"):
+        _edit_pipeline(project, f"    operator_args: {{ {key}: 1 }}\n")
+        result = cli(project, "generate")
+        assert result.exit_code == 2
+        assert "Invalid Airflow operator_args key" in result.output
+        _edit_pipeline(project, "")  # no-op; file reset below
+        (project / "pipelines/materials.yaml").write_text(
+            (project / "pipelines/materials.yaml").read_text().replace(f"    operator_args: {{ {key}: 1 }}\n", ""))
+
+
+def test_unquoted_yaml_date_rejected(project):
+    _edit_pipeline(project, "    default_args: { start_date: 2024-01-01 }\n")
+    result = cli(project, "generate")
+    assert result.exit_code == 2
+    assert "quote it in YAML" in result.output
+
+
+def test_dag_id_path_traversal_rejected(project):
+    _edit_pipeline(project, "    dag_id: ../evil\n")
+    result = cli(project, "generate")
+    assert result.exit_code == 2
+    assert "Invalid Airflow dag_id" in result.output
