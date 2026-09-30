@@ -48,7 +48,7 @@ def validate_params(meta: BapiMeta, params: dict) -> list[dict]:
                     errors.append(bapiret("E", 104, f"Value '{v}' is not allowed for {pname}-{fname}", pname, fname))
     for pname, pm in meta.parameters.items():
         value = params.get(pname)
-        if value is None or (pm.kind == "structure" and not isinstance(value, dict)) or (pm.kind == "table" and not isinstance(value, list)):
+        if (pm.kind == "structure" and value is not None and not isinstance(value, dict)) or (pm.kind == "table" and value is not None and not isinstance(value, list)):
             continue
         for row in (value or []) if pm.kind == "table" else [value or {}]:
             for fname, fm in pm.fields.items():
@@ -146,7 +146,7 @@ def make_server(port: int, sap: MockSap | None = None,
                 return self._send(404, {"error": "not found"})
             try:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
-            except json.JSONDecodeError as e:
+            except ValueError:
                 return self._send(400, {"error": "invalid JSON"})
             try:
                 function, params = body.get("function", ""), body.get("params", {})

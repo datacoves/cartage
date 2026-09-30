@@ -118,10 +118,19 @@ def test_malformed_json_returns_400():
 def test_structure_parameter_must_be_dict():
     result = MockSap().call("BAPI_MATERIAL_SAVEDATA", {**GOOD, "HEADDATA": ["x"]})
     assert result["RETURN"][0]["TYPE"] == "E"
+    assert result["RETURN"][0]["NUMBER"] == "106"
     assert "must be a structure" in result["RETURN"][0]["MESSAGE"]
 
 
 def test_table_parameter_must_be_list():
     result = MockSap().call("BAPI_MATERIAL_SAVEDATA", {**GOOD, "MATERIALDESCRIPTION": {"LANGU_ISO": "EN"}})
     assert result["RETURN"][0]["TYPE"] == "E"
+    assert result["RETURN"][0]["NUMBER"] == "106"
     assert "must be a table" in result["RETURN"][0]["MESSAGE"]
+
+
+def test_omitted_structure_validates_required_fields():
+    # Omitted HEADDATA should be treated as {} and trigger required field errors
+    result = MockSap().call("BAPI_MATERIAL_SAVEDATA", {"CLIENTDATA": {"BASE_UOM": "EA"}, "CLIENTDATAX": {"BASE_UOM": "X"}})
+    messages_list = messages(result)
+    assert any("Required field HEADDATA-MATERIAL is not filled" in msg for _, msg in messages_list)
