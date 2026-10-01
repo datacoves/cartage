@@ -8,7 +8,8 @@ Python, run locally to test, and generate thin Airflow DAGs, Dagster jobs or Pre
 - **Sources:** local CSV folders, S3, and any [dlt](https://dlthub.com) source.
 - **Destinations:** SAP via BAPIs (ships a mock SAP; the RFC transport is planned) and any
   [dlt destination](https://dlthub.com/docs/dlt-ecosystem/destinations/) (filesystem/S3, DuckDB, Postgres, Snowflake,
-  BigQuery, ...), loaded natively by dlt. One pipeline can write to several destinations.
+  BigQuery, ...), loaded natively by dlt, and local files (JSON, JSON Lines, XML, CSV). One pipeline can write to
+  several destinations.
 - **Engines:** `python` (a plain loop) and `dlt`.
 - **Orchestrators:** Airflow, Dagster and Prefect. Generated code only calls `cartage run`, so local and production
   run the same code.
@@ -191,6 +192,33 @@ Other keys go to `dlt.sources.incremental`: `lag` (re-read a window before the l
 mapped parameters and fields against the bundled BAPI metadata; the mock SAP also rejects values that are too long,
 not allowed, or missing when required, as SAP would.
 
+#### File destination
+
+`type: file` writes each run to one local file, in `json` (an array), `jsonl` (default), `xml` or `csv`. It works with
+both engines and needs no extra dependencies. `cartage plan` shows each record as it will be written.
+
+```yaml
+connections:
+  exports:
+    type: file
+    envs:
+      dev: { path: ./output }       # folder, relative to the project
+```
+
+```yaml
+destinations:
+  - { connection: exports, format: json }                                 # output/<pipeline>.json
+  - { connection: exports, name: as_xml, format: xml, root: materials, record: material }
+  - { connection: exports, name: as_csv, format: csv, file: "materials_{date}.csv" }
+```
+
+`file` is the name inside the folder (`{pipeline}`, `{date}` as `YYYYMMDD` UTC, `{ext}`; default `{pipeline}.{ext}`).
+The file is written to `<file>.partial` and moved into place only when the run succeeds, so a failed run never leaves
+a half-written file and the previous one stays. Nested values become nested elements in XML (lists as `<item>`) and
+JSON text in CSV; XML names that start with a digit get a leading `_`. A CSV's columns come from its first record;
+records with other columns are rejected. Records that fail transforms go to rejects as usual, and the file holds the
+rest.
+
 #### dlt destinations
 
 Any [dlt destination](https://dlthub.com/docs/dlt-ecosystem/destinations/) (filesystem/S3, DuckDB, Postgres,
@@ -264,7 +292,8 @@ engine: dlt
 #### Multiple destinations
 
 Use `destinations:` instead of `destination:`. Each entry is its own run, in order, with its own state, rejects and
-dlt pipeline (`<pipeline>__<connection>`), so a failed destination retries without reloading the others. The source is
+dlt pipeline (`<pipeline>__<name>`; `name` defaults to the connection and tells apart destinations that share
+one), so a failed destination retries without reloading the others. The source is
 read once per destination; to read it once, land it in filesystem/S3 first and load from there.
 
 ```yaml
@@ -382,7 +411,7 @@ environment variable. Resolved values are never printed.
 Incremental state is saved only when a run has no record errors (or with `--advance-state`). Rejected records
 go to `.cartage/rejects/<pipeline>/<run_id>.jsonl`. `cartage state show|reset <pipeline>` inspects or clears state.
 
-With several destinations, each destination is its own run named `<pipeline>__<connection>`: state, rejects and the
+With several destinations, each destination is its own run named `<pipeline>__<name>`: state, rejects and the
 dlt pipeline are kept per destination, and `state show|reset` covers all of them. `cartage run` goes through the
 destinations in order and stops at the first fatal error; destinations that already finished keep their state, so a
 rerun only retries the rest. With `--json`, `run` prints one result line per destination and `plan` prints a list.
@@ -531,7 +560,8 @@ source module (at import, or at the start of the source function), knowing they 
 Adapters are entry points in the groups `cartage.sources`, `cartage.destinations`, `cartage.engines` and
 `cartage.orchestrators`. `cartage plugins` lists what is installed.
 
-A destination is a record sink (`preview` + `write`, like SAP) by default. To have the dlt engine load into it natively
+A destination is a record sink (`preview` + `write`, like SAP and `file`) by default. Optional: `finish(ok)` is called
+after the run (to finalize or discard output), and `preview_label`/`preview_syntax` name and highlight `plan` output. To have the dlt engine load into it natively
 instead, expose `dlt_destination()` returning a dlt destination, plus `hints` (resource hints such as
 `write_disposition`), `dataset_name`, `loader_file_format` and `dlt_env` (env vars applied to the run), as the
 built-in `dlt` destination does.

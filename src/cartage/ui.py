@@ -294,15 +294,21 @@ def plan_view(data: dict) -> None:
     for index, row in enumerate(
         zip_longest(data["records"], data["transformed"], data["payloads"]), start=1
     ):
+        label = data.get("payload_label", "bapi")
+        text = row[2] if isinstance(row[2], str) else None  # rendered output (XML, JSON, CSV): show it as is
         record = {
-            label: value
-            for label, value in zip(("source", "transformed", "bapi"), row)
+            name: value
+            for name, value in zip(("source", "transformed", label), row[:2] if text else row)
             if value is not None
         }
         if index - 1 in data.get("skipped", {}):
             record["transformed"] = f"none ({data['skipped'][index - 1]})"
         console.rule(f"record {index}", style="dim")
         console.print(_yaml(record))
+        if text is not None:
+            console.print(Text(f"{label}:", style="bold"))
+            console.print(Syntax(text, data.get("payload_syntax") or "text", theme="ansi_dark",
+                                 background_color="default"))
     for message in data["transform_errors"]:
         console.print(Text(f"transform error: {message}", style="red"))
 

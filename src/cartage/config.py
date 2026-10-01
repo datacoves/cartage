@@ -104,9 +104,14 @@ class TransformSpec(BaseModel):
 class DestinationSpec(BaseModel):
     model_config = ConfigDict(extra="allow")
     connection: str
+    name: str | None = None  # tells apart destinations of the same connection (e.g. a JSON and an XML file)
+
+    @property
+    def key(self) -> str:
+        return self.name or self.connection
 
     def options(self) -> dict[str, Any]:
-        return self.model_dump(exclude={"connection"})
+        return self.model_dump(exclude={"connection", "name"})
 
 
 class Pipeline(BaseModel):
@@ -126,9 +131,10 @@ class Pipeline(BaseModel):
             raise ValueError("set either 'destination' or 'destinations', not both")
         if self.destination is None and not self.destinations:
             raise ValueError("set 'destination' or a non-empty 'destinations' list")
-        names = [spec.connection for spec in self.destinations]
+        names = [spec.key for spec in self.destinations]
         if len(names) != len(set(names)):
-            raise ValueError("destination connections must be unique within a pipeline")
+            raise ValueError("destinations must be unique within a pipeline: "
+                             "set 'name' on destinations that share a connection")
         return self
 
     @property
@@ -136,11 +142,11 @@ class Pipeline(BaseModel):
         return [self.destination] if self.destination is not None else self.destinations
 
     def run_names(self) -> dict[str, str]:
-        """Destination connection → run name. Each destination of a multi-destination pipeline is its own run,
-        with its own state, rejects and dlt pipeline, so one failing target retries without reloading the others."""
+        """Destination key (name, else connection) → run name. Each destination of a multi-destination pipeline is its
+        own run, with its own state, rejects and dlt pipeline, so one failing target retries without reloading the others."""
         if self.destination is not None:
-            return {self.destination.connection: self.name}
-        return {d.connection: f"{self.name}__{re.sub(r'[^A-Za-z0-9_]', '_', d.connection)}" for d in self.destinations}
+            return {self.destination.key: self.name}
+        return {d.key: f"{self.name}__{re.sub(r'[^A-Za-z0-9_]', '_', d.key)}" for d in self.destinations}
 
 
 _yaml = YAML(typ="rt")

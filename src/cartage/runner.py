@@ -62,7 +62,7 @@ def prepare(project: Project, pipeline_ref: str, env: str | None = None, engine:
     names = pipeline.run_names()
     if destination is None and len(names) > 1:
         raise CartageError(f"{label}: has several destinations; prepare one of {', '.join(names)}, or use prepare_all")
-    dest_spec = next(d for d in pipeline.destination_specs if destination in (None, d.connection))
+    dest_spec = next(d for d in pipeline.destination_specs if destination in (None, d.key))
     dest_type, dest_conf, where = project.connection(dest_spec.connection, env)
     dest_conf = secrets.resolve(dest_conf, where)
     dest_opts = secrets.resolve(dest_spec.options(), label)
@@ -81,8 +81,10 @@ def prepare(project: Project, pipeline_ref: str, env: str | None = None, engine:
     destination = dest_cls(dest_conf, dest_opts, project.root)
     if getattr(destination, "dataset_name", "") is None:  # dlt destinations default to the pipeline, not the run name
         destination.dataset_name = pipeline.name
+    if hasattr(destination, "run_name"):  # e.g. the file destination's default file name
+        destination.run_name = pipeline.name
     engine_obj = registry.get("engines", engine_name)()
-    name = names[dest_spec.connection]
+    name = names[dest_spec.key]
     store = StateStore(state_backend(project, env, secrets), name, env)
     return Prepared(project, pipeline, env, source_type, dest_type, engine_name, source, destination, engine_obj, steps,
                     store, name, dest_spec)
@@ -93,13 +95,26 @@ def prepare_all(project: Project, pipeline_ref: str, env: str | None = None, eng
     return [prepare(project, pipeline_ref, env, engine, d) for d in project.load_pipeline(pipeline_ref).run_names()]
 
 
+def _run_engine(prep: Prepared, state, on_progress: Callable[[RunResult], None]) -> RunResult:
+    """The engine run, then the destination's finish(ok) hook if it has one (files move into place or are dropped)."""
+    finish = getattr(prep.destination, "finish", None)
+    try:
+        result = prep.engine.run(prep.name, prep.source, prep.steps, prep.destination, state, on_progress)
+    except BaseException:
+        if finish:
+            finish(False)
+        raise
+    if finish:
+        finish(True)
+    return result
+
+
 def run_pipeline(prep: Prepared, *, advance_state: bool = False, full_refresh: bool = False,
                  on_progress: Callable[[RunResult], None] | None = None) -> RunResult:
     state = prep.store.empty() if full_refresh else prep.store.load()
     try:
         try:
-            result = prep.engine.run(prep.name, prep.source, prep.steps, prep.destination, state,
-                                     on_progress or (lambda _: None))
+            result = _run_engine(prep, state, on_progress or (lambda _: None))
         except FatalRunError as e:
             if e.result is not None and e.result.errors:  # keep the partial rejects; state is never saved
                 e.result.rejects_path = str(write_rejects(prep.project.root, prep.name, new_run_id(), e.result.errors))
@@ -158,4 +173,6 @@ def preview(prep: Prepared, n: int = 3) -> dict:
         payloads = prep.destination.preview(transformed)
     return {"pipeline": pipeline.name, "env": env, "engine": prep.engine_name, "source": source,
             "destination": destination, "files": files, "records": first[:n], "transformed": transformed,
-            "skipped": skipped, "payloads": payloads, "transform_errors": errors}
+            "skipped": skipped, "payloads": payloads, "transform_errors": errors,
+            "payload_label": getattr(prep.destination, "preview_label", "payload"),
+            "payload_syntax": getattr(prep.destination, "preview_syntax", None)}

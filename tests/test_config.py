@@ -104,7 +104,7 @@ def test_multiple_pipeline_destinations(root):
         ),
         (
             "destinations:\n  - connection: sap_erp\n  - connection: sap_erp\n",
-            "destination connections must be unique",
+            "set .name. on destinations that share a connection",
         ),
         ("", "set 'destination' or a non-empty 'destinations' list"),
     ],

@@ -14,6 +14,8 @@ ROLLBACK = ("BAPI_TRANSACTION_ROLLBACK", {})
 
 
 class SapDestination:
+    preview_label = "bapi"
+
     def __init__(self, config: dict, options: dict, root: Path):
         if not options.get("bapi"):
             raise CartageError("The SAP destination needs 'bapi'", hint="e.g. bapi: BAPI_MATERIAL_SAVEDATA")
