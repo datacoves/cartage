@@ -1,4 +1,4 @@
-"""Resolve ${secret:...} and ${env:...} references and keep resolved values out of output."""
+"""Resolve ${secret:...}, ${env:...} and ${airflow:...} references and keep resolved values out of output."""
 from __future__ import annotations
 
 import os
@@ -10,7 +10,8 @@ from ruamel.yaml import YAML
 
 from cartage.core import CartageError
 
-REF = re.compile(r"\$\{(secret|env):([A-Za-z0-9_.\-]+)\}")
+REF = re.compile(r"\$\{(secret|env|airflow):([A-Za-z0-9_.\-]+)\}")
+AIRFLOW_FIELDS = ("host", "login", "password", "schema", "port")
 SECRETS_FILE = Path(".cartage") / "secrets.yaml"
 
 # ponytail: process-wide set of revealed values; fine for a CLI process, pass a masker around if cartage becomes a long-lived service.
@@ -25,6 +26,38 @@ def mask(text: str) -> str:
 
 def env_key(key: str) -> str:
     return "CARTAGE_SECRET__" + key.replace(".", "__").upper()
+
+
+def _airflow_parts(key: str) -> tuple[str, list[str]]:
+    """`conn_id.login` or `conn_id.extra.<key>[.<key>...]` → (conn_id, path)."""
+    conn_id, _, field = key.partition(".")
+    path = field.split(".") if field else []
+    if not conn_id or not path or not (path[0] in AIRFLOW_FIELDS and len(path) == 1 or path[0] == "extra" and len(path) > 1):
+        raise CartageError(f"Invalid Airflow connection reference '${{airflow:{key}}}'",
+                           hint=f"Use <conn_id>.<field> with field {', '.join(AIRFLOW_FIELDS)}, or <conn_id>.extra.<key>")
+    return conn_id, path
+
+
+def airflow_env_key(key: str) -> str:
+    """The variable a generated DAG sets for ${airflow:key}: main.extra.account → CARTAGE_AIRFLOW__MAIN__EXTRA__ACCOUNT."""
+    _airflow_parts(key)
+    return "CARTAGE_AIRFLOW__" + re.sub(r"[^A-Za-z0-9]", "_", key.replace(".", "__")).upper()
+
+
+def airflow_template(key: str) -> str:
+    """The Jinja Airflow renders to that connection field when the task runs."""
+    conn_id, path = _airflow_parts(key)
+    field = f".{path[0]}" if path[0] != "extra" else ".extra_dejson" + "".join(f"[{p!r}]" for p in path[1:])
+    return f"{{{{ conn.get({conn_id!r}){field} or '' }}}}"
+
+
+def references(obj: Any, kind: str) -> set[str]:
+    """Keys of every ${kind:...} reference inside obj (dicts, lists, strings)."""
+    if isinstance(obj, dict):
+        return set().union(*(references(v, kind) for v in obj.values()))
+    if isinstance(obj, list):
+        return set().union(*(references(v, kind) for v in obj))
+    return {m.group(2) for m in REF.finditer(obj) if m.group(1) == kind} if isinstance(obj, str) else set()
 
 
 class Secrets:
@@ -53,6 +86,13 @@ class Secrets:
             if key not in self.environ:
                 raise CartageError(f"Environment variable {key} is not set (referenced at {where})", hint=f"export {key}=...")
             value: Any = self.environ[key]
+        elif kind == "airflow":
+            name = airflow_env_key(key)
+            if name not in self.environ:
+                raise CartageError(f"Airflow connection field '{key}' is not available (referenced at {where})",
+                                   hint="It is set by DAGs from `cartage generate`; outside Airflow use another "
+                                        f"environment, or set {name}")
+            value = self.environ[name]
         else:
             value = self.environ.get(env_key(key))
             if value is None:

@@ -12,6 +12,7 @@ from jinja2 import ChoiceLoader, Environment, FileSystemLoader, PackageLoader, S
 
 from cartage import __version__
 from cartage.core import CartageError
+from cartage.secrets import airflow_env_key, airflow_template, references
 
 DEFAULTS: dict[str, Any] = {
     "dags_dir": "dags",
@@ -26,8 +27,9 @@ DEFAULTS: dict[str, Any] = {
     "command": "cartage",
     "project_dir": None,
     "dag_id": None,
+    "task_env": {},  # extra environment variables for the task, e.g. UV_CACHE_DIR
 }
-RESERVED_KWARGS = {"task_id", "bash_command", "executor_config"}
+RESERVED_KWARGS = {"task_id", "bash_command", "executor_config", "env", "append_env"}
 
 
 def _check_literal(name: str, value: Any, target: str = "Airflow") -> None:
@@ -62,16 +64,26 @@ class AirflowOrchestrator:
             raise CartageError(f"Unknown Airflow setting(s): {', '.join(unknown)}", hint=f"Supported: {', '.join(DEFAULTS)}")
         if ":" not in s["operator"]:
             raise CartageError(f"Airflow operator '{s['operator']}' must be 'module.path:ClassName'")
-        for name in ("default_args", "operator_args", "tags", "schedule", "image"):
+        for name in ("default_args", "operator_args", "tags", "schedule", "image", "task_env"):
             _check_literal(name, s[name])
         for key in s["operator_args"]:
             if not isinstance(key, str) or not key.isidentifier() or keyword.iskeyword(key) or key in RESERVED_KWARGS:
                 raise CartageError(f"Invalid Airflow operator_args key '{key}'",
-                                   hint="Keys must be Python identifiers, not keywords, and not task_id, bash_command or executor_config")
+                                   hint="Keys must be Python identifiers, not keywords, and not "
+                                        f"{', '.join(sorted(RESERVED_KWARGS))} (use task_env for variables)")
         dag_id = s["dag_id"] or pipeline.name
         if not re.fullmatch(r"[A-Za-z0-9_.-]+", str(dag_id)) or ".." in str(dag_id):
             raise CartageError(f"Invalid Airflow dag_id '{dag_id}'", hint="Use letters, digits, '_', '-' and '.' only")
         return s
+
+    def task_env(self, project, pipeline, s: dict) -> dict[str, str]:
+        """task_env plus every ${airflow:...} the pipeline's connections use (any env), rendered by Airflow at run time."""
+        names = {pipeline.source.connection, *(d.connection for d in pipeline.destination_specs),
+                 *(c.connection for c in project.config.state.values())} - {None}
+        scanned = [project.connections[n].envs for n in sorted(names) if n in project.connections]
+        refs = references([*scanned, pipeline.model_dump(mode="json", by_alias=True)], "airflow")
+        return {**{str(k): str(v) for k, v in s["task_env"].items()},
+                **{airflow_env_key(k): airflow_template(k) for k in sorted(refs)}}
 
     def context(self, project, pipeline, out_dir: Path | None = None) -> dict:
         s = self.settings(project, pipeline)
@@ -96,6 +108,7 @@ class AirflowOrchestrator:
             "project_dir": s["project_dir"] or Path(os.path.relpath(project.root, dags_dir)).as_posix(),
             "command": s["command"],  # global options (--project-dir) must come before `run`, so the template assembles it
             "run_args": f"{shlex.quote(rel)} --env {env_expr}",
+            "task_env": self.task_env(project, pipeline, s),
         }
 
     def generate(self, project, pipelines: list, out_dir: Path | None = None) -> dict[Path, str]:

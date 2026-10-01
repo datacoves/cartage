@@ -289,7 +289,7 @@ schedule:
 
 | Target  | Output (default)                        | Settings                                                                    | Environment at run time  |
 | ------- | --------------------------------------- | --------------------------------------------------------------------------- | ------------------------ |
-| airflow | `dags/<dag_id>.py`                      | `dags_dir`, `schedule`, `tags`, `default_args`, `operator`, `image`, ...    | Airflow var `cartage_env` |
+| airflow | `dags/<dag_id>.py`                      | `dags_dir`, `schedule`, `tags`, `default_args`, `operator`, `operator_args`, `task_env`, `image`, ... | Airflow var `cartage_env` |
 | dagster | `orchestration/dagster/<name>.py`       | `out_dir`, `name`, `schedule`, `timezone`, `tags`, `env`, `command`, `project_dir` | `CARTAGE_ENV` env var  |
 | prefect | `orchestration/prefect/<name>.py`       | `out_dir`, `name`, `schedule`, `retries`, `tags`, `env`, `command`, `project_dir`  | `CARTAGE_ENV` env var  |
 
@@ -298,6 +298,9 @@ schedule:
 - **Prefect:** each file defines the `cartage_run` flow. `python orchestration/prefect/<name>.py` serves it on the
   schedule, or point `prefect deploy` at `orchestration/prefect/<name>.py:cartage_run`.
 - `env` defaults to `prd`; `command` (default `cartage`) may include a launcher, e.g. `uv run cartage`.
+- **Airflow:** `task_env` adds environment variables to the task (e.g. `UV_CACHE_DIR`); `${airflow:...}` references
+  in the pipeline's connections are added automatically (see [Secrets](#secrets)). `operator` can be any
+  `BashOperator`-compatible class, e.g. `operators.datacoves.bash:DatacovesBashOperator`.
 
 ## Batches
 
@@ -310,6 +313,25 @@ schedule:
 
 `${secret:sap.passwd}` reads `CARTAGE_SECRET__SAP__PASSWD`, then `.cartage/secrets.yaml`. `${env:VAR}` reads an
 environment variable. Resolved values are never printed.
+
+`${airflow:<conn_id>.<field>}` reads an Airflow connection: `host`, `login`, `password`, `schema`, `port`, or
+`extra.<key>` (nested keys with more dots). DAGs from `cartage generate` pass each field the pipeline uses to the task
+as `CARTAGE_AIRFLOW__<CONN_ID>__<FIELD>`, rendered by Airflow when the task runs (`{{ conn.get(...) }}`), so the
+values come from Airflow's connection store (metadata DB, secrets backend or `AIRFLOW_CONN_*`) and never sit in the DAG
+file. Outside Airflow these references fail with a hint: use them in the environment the DAGs run (e.g. `prd`).
+
+```yaml
+warehouse:
+  type: dlt
+  envs:
+    prd:
+      destination: snowflake
+      credentials:
+        host: "${airflow:main_load_keypair.extra.account}"
+        username: "${airflow:main_load_keypair.login}"
+        private_key: "${airflow:main_load_keypair.extra.private_key_content}"   # PEM as stored
+        warehouse: "${airflow:main_load_keypair.extra.warehouse}"
+```
 
 ## State and rejects
 
