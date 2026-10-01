@@ -35,6 +35,11 @@ jobs:
       - name: Build distributions
         run: uv build --no-sources
 
+      - name: Smoke-test built wheel in isolation
+        run: |
+          wheel="$(find dist -name '*.whl' -print -quit)"
+          uv run --isolated --no-project --python 3.11 --with "./$wheel" --reinstall-package cartage cartage --version
+
       - name: Upload distributions
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

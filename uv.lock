@@ -522,9 +522,10 @@ wheels = [
 
 [[package]]
 name = "cartage"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "." }
 dependencies = [
+    { name = "click" },
     { name = "jinja2" },
     { name = "pydantic" },
     { name = "rich" },
@@ -566,6 +567,7 @@ requires-dist = [
     { name = "apache-airflow-providers-standard", marker = "extra == 'airflow'", specifier = ">=1.0" },
     { name = "boto3", marker = "extra == 's3'", specifier = ">=1.34" },
     { name = "cartage", extras = ["dlt", "s3", "airflow"], marker = "extra == 'all'" },
+    { name = "click", specifier = ">=8.1" },
     { name = "dlt", marker = "extra == 'dlt'", specifier = ">=1.20" },
     { name = "jinja2", specifier = ">=3.1" },
     { name = "kubernetes", marker = "extra == 'airflow'", specifier = ">=29" },

@@ -4,12 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cartage"
-version = "0.1.0"
+version = "0.1.1"
 description = "Declarative data migrations: YAML pipelines, Python transforms, any engine, any orchestrator."
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11.4"  # tarfile extractall(filter="data")
 dependencies = [
+  "click>=8.1",
   "typer>=0.12",
   "rich>=13.7",
   "pydantic>=2.6",
