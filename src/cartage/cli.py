@@ -10,10 +10,10 @@ import typer
 from rich.panel import Panel
 
 from cartage import __version__, registry, ui
+from cartage.adapters.destinations.sap.transports.mock import make_server
 from cartage.checks import check_pipeline
 from cartage.config import load_project
 from cartage.core import FatalRunError
-from cartage.adapters.destinations.sap.transports.mock import make_server
 from cartage.runner import prepare_all, preview, run_pipeline, state_backend
 from cartage.scaffold import init_project
 from cartage.secrets import Secrets, mask

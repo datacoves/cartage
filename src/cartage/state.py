@@ -6,7 +6,7 @@ import json
 import tarfile
 import tempfile
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from cartage.core import PipelineState, RecordError, StateBackend
@@ -67,7 +67,7 @@ class StateStore:
 
 
 def new_run_id() -> str:
-    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    return datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
 
 
 def write_rejects(root: Path, pipeline: str, run_id: str, errors: list[RecordError]) -> Path:

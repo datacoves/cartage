@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import json
 import traceback
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
 from io import StringIO
 from itertools import zip_longest
 from pathlib import Path
-from typing import Iterator
+from typing import Self
 
 import click
 import typer
@@ -120,7 +121,7 @@ class RunProgress:
             transient=True,
         )
 
-    def __enter__(self) -> "RunProgress":
+    def __enter__(self) -> Self:
         self.progress.start()
         self.task = self.progress.add_task(self.label)
         return self
@@ -316,7 +317,7 @@ def connections_table(project, env: str | None) -> None:
 
 
 def log_bapi_call(function: str, params: dict, result: dict) -> None:
-    now = f"{datetime.now():%H:%M:%S} "
+    now = f"{datetime.now().astimezone():%H:%M:%S} "  # local time, for the console
     returned = result.get("RETURN", [])
     if not returned:
         console.print(Text.assemble((now, "dim"), (function, "dim")))

@@ -1,7 +1,7 @@
 """The simplest engine: a loop. No dependencies; the reference behaviour for other engines."""
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 from cartage.core import FatalRunError, PipelineState, RunResult
 from cartage.transforms import Step, apply_steps

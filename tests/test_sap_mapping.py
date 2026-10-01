@@ -46,7 +46,7 @@ def test_empty_and_missing_values_are_skipped():
 
 @pytest.mark.parametrize("value, expected", [
     (True, "X"), (False, ""), (42, "42"), (datetime.date(2024, 3, 1), "20240301"),
-    (datetime.datetime(2024, 3, 1, 10, 0), "20240301"), ("x", "x"),
+    (datetime.datetime(2024, 3, 1, 10, 0, tzinfo=datetime.UTC), "20240301"), ("x", "x"),
 ])
 def test_to_sap(value, expected):
     assert to_sap(value) == expected

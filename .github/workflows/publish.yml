@@ -29,6 +29,9 @@ jobs:
       - name: Install test dependencies
         run: uv sync --locked --python 3.11 --group dev --extra dlt
 
+      - name: Lint
+        run: uv run --locked ruff check src tests
+
       - name: Run tests
         run: uv run --locked pytest
 

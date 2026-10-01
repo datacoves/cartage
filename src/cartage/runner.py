@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import copy
 import shutil
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 from cartage import registry
 from cartage.config import DestinationSpec, Pipeline, Project, StateConfig

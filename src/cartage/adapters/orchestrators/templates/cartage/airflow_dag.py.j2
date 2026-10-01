@@ -24,7 +24,7 @@ default_args = {{ default_args | py }}
 {% block dag %}
 with DAG(
     dag_id={{ dag_id | py }},
-    schedule={{ schedule | py }},
+    schedule={% block schedule %}{{ schedule | py }}{% endblock %},
     start_date=pendulum.datetime(2024, 1, 1, tz="UTC"),
     catchup={{ catchup | py }},
     tags={{ tags | py }},

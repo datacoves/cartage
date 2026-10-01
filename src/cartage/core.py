@@ -1,9 +1,10 @@
 """Shared types: errors, run results, state, and the adapter protocols."""
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Iterator, Protocol
+from typing import Any, Protocol
 
 
 def to_rows(items: Any) -> list[dict]:
@@ -30,7 +31,7 @@ class FatalRunError(CartageError):
     """The run cannot continue: transport/connection failure, state store, or on_error: fail."""
 
     exit_code = 3
-    result: "RunResult | None" = None  # partial result (what was committed so far); engines attach it
+    result: RunResult | None = None  # partial result (what was committed so far); engines attach it
 
 
 @dataclass

@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from ruamel.yaml import YAML
+from ruamel.yaml.error import YAMLError
 
 from cartage.core import CartageError
 
@@ -72,8 +74,8 @@ class Secrets:
             if path.is_file():
                 try:
                     data = YAML(typ="safe").load(path.read_text(encoding="utf-8"))
-                except Exception as e:
-                    raise CartageError(f"{SECRETS_FILE.as_posix()}: invalid YAML: {e}")
+                except YAMLError as e:
+                    raise CartageError(f"{SECRETS_FILE.as_posix()}: invalid YAML: {e}") from e
                 if not isinstance(data, dict):
                     raise CartageError(f"{SECRETS_FILE.as_posix()} must contain a mapping")
                 self._file = data or {}

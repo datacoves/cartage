@@ -8,8 +8,9 @@ import json
 import threading
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Callable
+from typing import Any
 
 from cartage.adapters.destinations.sap.meta import BapiMeta, load_meta
 from cartage.core import CartageError, FatalRunError
@@ -154,7 +155,7 @@ def make_server(port: int, sap: MockSap | None = None,
                 if on_call:
                     on_call(function, params, result)
                 self._send(200, result)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - a server answers any failure with a 500
                 self._send(500, {"error": f"{type(e).__name__}: {e}"})
 
         def log_message(self, *args: Any) -> None:

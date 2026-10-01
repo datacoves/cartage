@@ -61,7 +61,7 @@ def test_non_utf8_file_is_fatal_and_named(data):
 
 def test_utf8_bom_is_stripped(data):
     (data / "data" / "materials" / "a.csv").write_bytes("﻿material\n1\n".encode())
-    assert list(source(data).read({}))[0][0]["material"] == "1"
+    assert next(iter(source(data).read({})))[0]["material"] == "1"
 
 
 def test_config_errors(data):

@@ -299,7 +299,10 @@ schedule:
   schedule, or point `prefect deploy` at `orchestration/prefect/<name>.py:cartage_run`.
 - `env` defaults to `prd`; `command` (default `cartage`) may include a launcher, e.g. `uv run cartage`.
 - **Airflow:** `task_env` adds environment variables to the task (e.g. `UV_CACHE_DIR`). `operator` can be any
-  `BashOperator`-compatible class, e.g. `operators.datacoves.bash:DatacovesBashOperator`.
+  `BashOperator`-compatible class, e.g. `operators.datacoves.bash:DatacovesBashOperator`. A project template
+  (`templates/airflow/dag.py.j2`, `{% extends "cartage/airflow_dag.py.j2" %}`) can override the blocks `header`,
+  `imports`, `default_args`, `schedule`, `dag`, `task` and `extra`, e.g.
+  `{% block schedule %}my_utils.set_schedule({{ super() }}){% endblock %}`.
 
 ### Airflow connections
 

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import fnmatch
 import io
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError

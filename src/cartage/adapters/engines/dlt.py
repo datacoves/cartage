@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import shutil
-from typing import Callable, Iterator
+from collections.abc import Callable, Iterator
 from unittest.mock import patch
 
 import dlt

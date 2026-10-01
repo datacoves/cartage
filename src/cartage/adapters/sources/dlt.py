@@ -2,9 +2,8 @@
 """Any dlt source or resource, referenced as module:function."""
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from pathlib import Path
-from typing import Iterator
 
 import dlt
 from dlt.extract import DltResource, DltSource

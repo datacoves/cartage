@@ -27,7 +27,7 @@ def test_generated_dag_runs_cartage(project, tmp_path):
            "AIRFLOW_VAR_CARTAGE_ENV": "dev",
            "AIRFLOW_CONN_FILES": '{"conn_type": "generic", "schema": "./data"}'}
     subprocess.run([AIRFLOW, "db", "migrate"], env=env, check=True, capture_output=True, timeout=600)
-    result = subprocess.run([AIRFLOW, "dags", "test", "materials_to_sap"], env=env, capture_output=True, text=True, timeout=600)
+    result = subprocess.run([AIRFLOW, "dags", "test", "materials_to_sap"], env=env, check=False, capture_output=True, text=True, timeout=600)
     assert result.returncode == 0, result.stdout[-4000:] + result.stderr[-4000:]
     # State is only saved after a run without record errors, so this proves `cartage run` succeeded inside Airflow.
     state = json.loads((project / ".cartage/state/materials_to_sap/dev/state.json").read_text())

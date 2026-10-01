@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -19,7 +20,7 @@ def test_demo_run_counts_and_rejects(project):
     assert {e.source for e in result.errors} == {"materials/materials.csv:9", "materials/materials.csv:15"}
     assert result.state_advanced is False
     assert not (project / STATE).exists()
-    assert len(open(result.rejects_path).read().splitlines()) == 2
+    assert len(Path(result.rejects_path).read_text().splitlines()) == 2
 
 
 def test_advance_state_then_incremental_skip_then_full_refresh(project):
@@ -62,5 +63,5 @@ def test_fatal_run_writes_partial_rejects_and_keeps_state(project):
     prep.engine = _FailingEngine()
     with pytest.raises(FatalRunError) as info:
         run_pipeline(prep, advance_state=True)
-    assert len(open(info.value.result.rejects_path).read().splitlines()) == 1
+    assert len(Path(info.value.result.rejects_path).read_text().splitlines()) == 1
     assert not (project / STATE).exists()

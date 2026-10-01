@@ -4,9 +4,10 @@ from __future__ import annotations
 import importlib
 import inspect
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from cartage.core import CartageError, FatalRunError, RecordError
 
