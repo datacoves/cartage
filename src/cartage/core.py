@@ -6,6 +6,15 @@ from pathlib import Path
 from typing import Any, Callable, Iterator, Protocol
 
 
+def to_rows(items: Any) -> list[dict]:
+    """A batch as row dicts: pyarrow tables/batches, pandas DataFrames, a list of rows, or one row."""
+    if hasattr(items, "to_pylist"):  # pyarrow (sql_database pyarrow backend, ConnectorX)
+        return items.to_pylist()
+    if hasattr(items, "to_dict"):  # pandas DataFrame
+        return items.to_dict("records")
+    return [dict(i) for i in items] if isinstance(items, list) else [dict(items)]
+
+
 class CartageError(Exception):
     """A user-facing error: config, usage, or validation. Rendered as a panel, no traceback."""
 

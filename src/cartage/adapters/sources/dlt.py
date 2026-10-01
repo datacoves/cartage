@@ -9,8 +9,12 @@ from typing import Iterator
 import dlt
 from dlt.extract import DltResource, DltSource
 
-from cartage.core import CartageError
+from cartage.core import CartageError, to_rows
 from cartage.transforms import import_ref
+
+# Passed through to dlt.sources.incremental, e.g. lag: re-read a window before the last cursor value.
+INCREMENTAL_OPTIONS = ("lag", "end_value", "primary_key", "row_order", "last_value_func", "on_cursor_value_missing",
+                       "range_start", "range_end")
 
 
 class DltSourceAdapter:
@@ -25,6 +29,10 @@ class DltSourceAdapter:
         if self.incremental is not None and not (isinstance(self.incremental, dict) and "cursor" in self.incremental):
             raise CartageError("dlt source 'incremental' must be a mapping with 'cursor'",
                                hint='incremental: { cursor: updated_at, initial: "2024-01-01" }')
+        unknown = sorted(set(self.incremental or {}) - {"cursor", "initial", *INCREMENTAL_OPTIONS})
+        if unknown:
+            raise CartageError(f"Unknown dlt source incremental option(s): {', '.join(unknown)}",
+                               hint=f"Supported: cursor, initial, {', '.join(INCREMENTAL_OPTIONS)}")
         try:
             self.batch_size = int(options.get("batch_size", 100))
         except (TypeError, ValueError) as error:
@@ -49,17 +57,19 @@ class DltSourceAdapter:
         resources = self._resources()
         if self.incremental:
             for r in resources:
+                options = {k: v for k, v in self.incremental.items() if k in INCREMENTAL_OPTIONS}
                 r.apply_hints(incremental=dlt.sources.incremental(self.incremental["cursor"],
-                                                                  initial_value=self.incremental.get("initial")))
+                                                                  initial_value=self.incremental.get("initial"), **options))
         return resources
 
     def read(self, state: dict) -> Iterator[list[dict]]:
         batch: list[dict] = []
         for resource in self._resources():
             for item in resource:
-                batch.append(dict(item))
-                if len(batch) >= self.batch_size:
-                    yield batch
-                    batch = []
+                for row in to_rows(item):
+                    batch.append(row)
+                    if len(batch) >= self.batch_size:
+                        yield batch
+                        batch = []
         if batch:
             yield batch

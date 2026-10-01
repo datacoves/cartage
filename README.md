@@ -181,6 +181,8 @@ editing YAML to check the project and references.
 
 File sources with `incremental: true` skip files already processed. A dlt source's `ref` returns a dlt source or
 resource; `incremental: { cursor: updated_at, initial: "2024-01-01" }` adds a dlt cursor and needs `engine: dlt`.
+Other keys go to `dlt.sources.incremental`: `lag` (re-read a window before the last value, e.g. for late updates),
+`end_value`, `primary_key`, `row_order`, `last_value_func`, `on_cursor_value_missing`, `range_start`, `range_end`.
 
 #### SAP destination
 
@@ -213,19 +215,24 @@ destination:
   connection: warehouse
   dataset_name: raw                 # default: the pipeline name
   table_name: materials             # default: the source resource name
-  write_disposition: merge          # append (default) | replace | merge
-  primary_key: material             # merge needs primary_key or merge_key
+  write_disposition: merge          # append | replace | merge; unset: the source resource's hint, else append
+  primary_key: material             # merge key: here, or the source resource's own hints
   columns: { price: { data_type: decimal, precision: 18, scale: 4 } }
   loader_file_format: parquet
   naming: direct                    # dlt naming convention, or a project module (e.g. naming.upper)
   dlt_config:                       # any dlt config key, applied to this run only
     data_writer.buffer_max_items: 100000
     extract.max_parallel_items: 15
+  after_load:                       # called as f(pipeline, **with) after a successful load
+    - { ref: utils.snowflake:enable_change_tracking, with: { tables: [materials] } }
 ```
 
 The dlt engine loads straight into the destination: bulk loads, staging and merge are dlt's, run once per run.
 Without `transforms`, source batches reach dlt untouched, so Arrow/pandas batches (e.g. `sql_database` with the
-pyarrow backend, ConnectorX) stay columnar. dlt fails whole load jobs, not single records: a failed load stops the
+pyarrow backend, ConnectorX) stay columnar. Hints the source resource sets itself (`write_disposition`,
+`primary_key`, `columns`, ...) are kept unless the destination sets them. `after_load` hooks get the dlt pipeline, so
+they can run SQL with `pipeline.sql_client()` (grants, tags, change tracking); if one fails the data stays loaded, the
+run exits with code 3 and state is not saved. dlt fails whole load jobs, not single records: a failed load stops the
 run and state is not saved. Database-specific extraction (casts for Oracle LOBs and NUMBERs, MSSQL datetime2, Postgres
 enums and timestamptz, time zones) belongs in your dlt source factory, not in Cartage.
 

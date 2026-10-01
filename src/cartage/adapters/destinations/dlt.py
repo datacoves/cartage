@@ -4,10 +4,11 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import dlt
 
-from cartage.core import CartageError
+from cartage.core import CartageError, FatalRunError
 from cartage.secrets import mask
 from cartage.transforms import import_ref
 
@@ -17,6 +18,14 @@ DISPOSITIONS = ("append", "replace", "merge")
 def dlt_env(config: dict) -> dict[str, str]:
     """dlt config keys as the env vars dlt reads: data_writer.buffer_max_items → DATA_WRITER__BUFFER_MAX_ITEMS."""
     return {k.upper().replace(".", "__"): v if isinstance(v, str) else json.dumps(v) for k, v in config.items()}
+
+
+def _hook(spec: Any, root: Path) -> tuple[str, Any, dict]:
+    """`module:function` or { ref: module:function, with: {...} }; the function gets (pipeline, **with)."""
+    ref, kwargs = (spec, {}) if isinstance(spec, str) else (spec.get("ref"), spec.get("with") or {})
+    if not isinstance(ref, str) or not isinstance(kwargs, dict):
+        raise CartageError(f"Invalid after_load entry {spec!r}", hint="Use module:function or { ref: module:function, with: {...} }")
+    return ref, import_ref(ref, root), kwargs
 
 
 class DltDestinationAdapter:
@@ -39,13 +48,12 @@ class DltDestinationAdapter:
                 sys.path.insert(0, str(root))
         self.dlt_env = dlt_env(tuning)
 
-        disposition = options.get("write_disposition", "append")
-        if disposition not in DISPOSITIONS:
+        disposition = options.get("write_disposition")  # unset: the source resource's own hint, else dlt's append
+        if disposition is not None and disposition not in DISPOSITIONS:
             raise CartageError(f"Unsupported dlt write_disposition '{disposition}'", hint=f"Use {', '.join(DISPOSITIONS)}")
-        if disposition == "merge" and not (options.get("primary_key") or options.get("merge_key")):
-            raise CartageError("dlt write_disposition 'merge' needs 'primary_key' or 'merge_key'")
-        self.hints = {k: options[k] for k in ("table_name", "primary_key", "merge_key", "columns") if options.get(k)}
-        self.hints["write_disposition"] = disposition
+        self.hints = {k: options[k] for k in ("table_name", "write_disposition", "primary_key", "merge_key", "columns")
+                      if options.get(k)}
+        self.after_load_hooks = [_hook(h, root) for h in options.get("after_load") or []]
         self.dataset_name = options.get("dataset_name") or dataset
         self.loader_file_format = options.get("loader_file_format")
         self.destination = self._make(settings, root)
@@ -71,6 +79,15 @@ class DltDestinationAdapter:
 
     def dlt_destination(self):
         return self.destination
+
+    def after_load(self, pipeline) -> None:
+        """Post-load steps (grants, tags, change tracking), called with the dlt pipeline after a successful load."""
+        for ref, func, kwargs in self.after_load_hooks:
+            try:
+                func(pipeline, **kwargs)
+            except Exception as e:
+                raise FatalRunError(f"after_load '{ref}' failed: {type(e).__name__}: {mask(str(e))}",
+                                    hint="The data is loaded; state is not saved, so the next run loads it again") from e
 
     def preview(self, records: list[dict]) -> list[dict]:
         return []  # rows load as transformed; there is no separate payload to show

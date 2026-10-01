@@ -10,7 +10,7 @@ from unittest.mock import patch
 import dlt
 from dlt.common.destination.exceptions import DestinationTerminalException
 
-from cartage.core import CartageError, FatalRunError, PipelineState, RunResult
+from cartage.core import CartageError, FatalRunError, PipelineState, RunResult, to_rows
 from cartage.transforms import Step, apply_steps
 
 
@@ -33,14 +33,10 @@ class DltEngine:
                 raise
 
         def page(items):
-            if hasattr(items, "to_pylist"):  # pyarrow table/batch (sql_database pyarrow backend, connectorx)
-                items = items.to_pylist()
-            elif hasattr(items, "to_dict"):  # pandas DataFrame
-                items = items.to_dict("records")
-            items = items if isinstance(items, list) else [items]
+            items = to_rows(items)
             result.read += len(items)
             try:
-                out = apply_steps([dict(i) for i in items], steps)
+                out = apply_steps(items, steps)
             except CartageError as e:
                 fatal.append(e)
                 raise
@@ -105,6 +101,13 @@ class DltEngine:
                                           if not t.startswith("_dlt") and not tables.get(t, {}).get("parent"))
             result.read = result.read or result.ok
             on_progress(result)
+            hooks = getattr(destination, "after_load", None)
+            if hooks:
+                try:
+                    hooks(pipeline)
+                except FatalRunError as e:
+                    e.result = result
+                    raise
         # Loaded packages and the run trace hold copies of the data; keep only dlt state in the archive.
         shutil.rmtree(state.dlt_dir / name / "load" / "loaded", ignore_errors=True)
         (state.dlt_dir / name / "trace.pickle").unlink(missing_ok=True)

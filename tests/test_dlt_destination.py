@@ -142,6 +142,63 @@ def test_each_destination_is_its_own_run_with_its_own_state(project, tmp_path):
     assert not (state / "fan__lake_a" / "dev" / "state.json").exists()
 
 
+def test_after_load_hooks_get_the_pipeline_and_resource_hints_are_kept(project, tmp_path):
+    add_lakes(project, tmp_path, "lake")
+    (project / "src_rows.py").write_text(
+        "import dlt\n\n"
+        "@dlt.resource(name='people', write_disposition='replace', primary_key='id')\n"
+        "def people():\n"
+        "    yield [{'id': 1}, {'id': 2}]\n")
+    (project / "hooks.py").write_text(
+        "import json, pathlib\n\n"
+        "def record(pipeline, out, tables):\n"
+        "    pathlib.Path(out).write_text(json.dumps([pipeline.dataset_name, tables]))\n\n"
+        "def boom(pipeline):\n"
+        "    raise RuntimeError('no grants')\n")
+    out = tmp_path / "hook.json"
+    pipeline(project, "hooked", "source:\n  type: dlt\n  ref: src_rows:people\nengine: dlt\n"
+                                "destination:\n  connection: lake\n  after_load:\n"
+                                f"    - {{ ref: hooks:record, with: {{ out: {json.dumps(str(out))}, tables: [people] }} }}\n")
+
+    for _ in range(2):  # the resource's own replace is kept, so the second run does not append
+        result = cli(project, "run", "hooked", "--json")
+        assert result.exit_code == 0, result.output
+
+    assert len(rows(tmp_path / "lake", "hooked", "people")) == 2
+    assert json.loads(out.read_text()) == ["hooked", ["people"]]
+
+    path = project / "pipelines" / "hooked.yaml"
+    path.write_text(path.read_text().replace("hooks:record", "hooks:boom").replace(
+        f", with: {{ out: {json.dumps(str(out))}, tables: [people] }}", ""))
+    failed = cli(project, "run", "hooked", "--json")
+    assert failed.exit_code == 3
+    assert "after_load 'hooks:boom' failed: RuntimeError: no grants" in failed.output
+
+
+def test_incremental_options_reach_dlt(project, tmp_path):
+    add_lakes(project, tmp_path, "lake")
+    seen = tmp_path / "seen.txt"
+    (project / "src_inc.py").write_text(
+        "import dlt\n\n"
+        "@dlt.resource(name='events', primary_key='id')\n"
+        f"def events(t=dlt.sources.incremental('t')):\n"
+        f"    open({str(seen)!r}, 'a').write(f'{{t.start_value}}\\n')\n"
+        "    yield [{'id': 1, 't': 100}, {'id': 2, 't': 300}]\n")
+    pipeline(project, "inc", "source:\n  type: dlt\n  ref: src_inc:events\n  incremental: { cursor: t, lag: 250 }\n"
+                             "engine: dlt\ndestination:\n  connection: lake\n  write_disposition: merge\n")
+
+    for _ in range(2):
+        assert cli(project, "run", "inc", "--json").exit_code == 0
+
+    assert seen.read_text().split() == ["None", "50"]  # last value 300, minus lag 250
+
+    path = project / "pipelines" / "inc.yaml"
+    path.write_text(path.read_text().replace("lag: 250", "lagg: 250"))
+    result = cli(project, "validate", "inc")
+    assert result.exit_code == 2
+    assert "Unknown dlt source incremental option(s): lagg" in result.output
+
+
 def test_dlt_destination_requires_dlt_engine(project, tmp_path):
     add_lakes(project, tmp_path, "lake")
     pipeline(project, "py", CSV_SOURCE.replace("engine: dlt", "engine: python") + "destination:\n  connection: lake\n")
@@ -160,7 +217,6 @@ def test_connection_test_builds_the_destination(project, tmp_path):
 
 
 @pytest.mark.parametrize("options, message", [
-    ({"write_disposition": "merge"}, "needs 'primary_key' or 'merge_key'"),
     ({"write_disposition": "scd2"}, "Unsupported dlt write_disposition"),
 ])
 def test_invalid_options(tmp_path, options, message):
