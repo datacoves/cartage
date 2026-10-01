@@ -100,3 +100,20 @@ def test_plan_never_prints_resolved_secrets(project, monkeypatch):
             "${secret:sap.client}" in result.output
             and "hunter2client" not in result.output
         )
+
+
+def test_plan_pairs_each_record_with_its_own_output_when_steps_filter(project):
+    (project / "data/materials/materials.csv").write_text(
+        "material,industry,type,description,uom,status\n"
+        "100001,M,FERT,Old pump,EA,obsolete\n"
+        "100002,M,ROH,Steel,KGS,active\n")
+    pipeline = project / "pipelines/materials.yaml"
+    pipeline.write_text(pipeline.read_text().replace("  - batch: transforms.materials:dedupe\n    with: { key: material }\n", ""))
+
+    data = json.loads(cli(project, "plan", "materials", "--engine", "python", "--json").stdout)
+
+    assert data["transformed"][0] is None and data["skipped"] == {"0": "filtered out"}
+    assert data["transformed"][1]["material"] == "100002" and data["transformed"][1]["uom"] == "KG"
+    assert data["payloads"][1]["HEADDATA"]["MATERIAL"] == "100002"
+    text = cli(project, "plan", "materials", "--engine", "python").output
+    assert "transformed: none (filtered out)" in text

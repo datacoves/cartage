@@ -298,6 +298,8 @@ def plan_view(data: dict) -> None:
             for label, value in zip(("source", "transformed", "bapi"), row)
             if value is not None
         }
+        if index - 1 in data.get("skipped", {}):
+            record["transformed"] = f"none ({data['skipped'][index - 1]})"
         console.rule(f"record {index}", style="dim")
         console.print(_yaml(record))
     for message in data["transform_errors"]:

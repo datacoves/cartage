@@ -51,7 +51,7 @@ Generating Airflow, Dagster or Prefect files needs nothing extra; the orchestrat
 | ------------------------------------------------- | --------------------------------------------------------------------- |
 | `cartage init <dir>`                              | create a demo project (CSV → transforms → mock SAP)                   |
 | `cartage validate [pipelines...]`                 | check YAML, connections, secrets, transforms and mappings; moves no data |
-| `cartage plan <pipeline> [-n 3]`                  | dry run: files to process, first records before/after transforms, payloads |
+| `cartage plan <pipeline> [-n 3]`                  | dry run: files to process, each record before/after transforms (or why it was dropped), payloads |
 | `cartage run <pipeline>`                          | run it; `--env`, `--engine`, `--full-refresh`, `--advance-state`, `--json` |
 | `cartage generate [-t airflow\|dagster\|prefect]` | write orchestrator files; `--check`, `--output`, `--show-context <pipeline>` |
 | `cartage connections list\|test <name>`           | list connections (secrets as references) or check one                 |

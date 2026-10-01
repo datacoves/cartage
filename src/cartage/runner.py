@@ -138,8 +138,23 @@ def preview(prep: Prepared, n: int = 3) -> dict:
     files = ([{"file": f, "process": p} for f, p in prep.source.plan_files(data)]
              if hasattr(prep.source, "plan_files") else None)
     first = next(iter(prep.source.read(copy.deepcopy(data))), [])
-    out = apply_steps([dict(r) for r in first], prep.steps)
-    transformed = out.records[:n]
+    skipped: dict[int, str] = {}  # record index → why it has no output
+    if all(step.kind != "batch" for step in prep.steps):  # map/filter only: pair each record with its own output
+        transformed, payloads, errors = [], [], []
+        for index, record in enumerate(first[:n]):
+            out = apply_steps([dict(record)], prep.steps)
+            errors += [e.message for e in out.errors]
+            if out.records:
+                transformed.append(out.records[0])
+                payloads.append((prep.destination.preview(out.records) or [None])[0])
+            else:
+                transformed.append(None)
+                payloads.append(None)
+                skipped[index] = out.errors[0].message if out.errors else "filtered out"
+    else:  # batch steps regroup records: show the first outputs as they come
+        out = apply_steps([dict(r) for r in first], prep.steps)
+        transformed, errors = out.records[:n], [e.message for e in out.errors[:n]]
+        payloads = prep.destination.preview(transformed)
     return {"pipeline": pipeline.name, "env": env, "engine": prep.engine_name, "source": source,
             "destination": destination, "files": files, "records": first[:n], "transformed": transformed,
-            "payloads": prep.destination.preview(transformed), "transform_errors": [e.message for e in out.errors[:n]]}
+            "skipped": skipped, "payloads": payloads, "transform_errors": errors}
