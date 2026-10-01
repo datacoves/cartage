@@ -34,6 +34,7 @@ dlt = "cartage.adapters.sources.dlt:DltSourceAdapter"
 
 [project.entry-points."cartage.destinations"]
 sap = "cartage.adapters.destinations.sap.destination:SapDestination"
+dlt = "cartage.adapters.destinations.dlt:DltDestinationAdapter"
 
 [project.entry-points."cartage.engines"]
 python = "cartage.adapters.engines.python:PythonEngine"

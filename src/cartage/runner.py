@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from cartage import registry
-from cartage.config import Pipeline, Project, StateConfig
+from cartage.config import DestinationSpec, Pipeline, Project, StateConfig
 from cartage.core import CartageError, FatalRunError, RunResult, StateBackend
 from cartage.secrets import Secrets
 from cartage.state import LocalStateBackend, StateStore, new_run_id, write_rejects
@@ -27,6 +27,8 @@ class Prepared:
     engine: Any
     steps: list[Step]
     store: StateStore
+    name: str  # run name: the pipeline name, plus the destination when there are several
+    destination_spec: DestinationSpec
 
 
 def state_backend(project: Project, env: str, secrets: Secrets) -> StateBackend:
@@ -41,7 +43,8 @@ def state_backend(project: Project, env: str, secrets: Secrets) -> StateBackend:
     return cls.state_backend(secrets.resolve(conf, where), cfg.prefix, project.root)
 
 
-def prepare(project: Project, pipeline_ref: str, env: str | None = None, engine: str | None = None) -> Prepared:
+def prepare(project: Project, pipeline_ref: str, env: str | None = None, engine: str | None = None,
+            destination: str | None = None) -> Prepared:
     env = project.resolve_env(env)
     pipeline = project.load_pipeline(pipeline_ref)
     label = project.rel(pipeline.path)
@@ -55,21 +58,38 @@ def prepare(project: Project, pipeline_ref: str, env: str | None = None, engine:
         source_type, source_conf = spec.type, {}
     source_opts = secrets.resolve(spec.options(), label)
 
-    dest_type, dest_conf, where = project.connection(pipeline.destination.connection, env)
+    names = pipeline.run_names()
+    if destination is None and len(names) > 1:
+        raise CartageError(f"{label}: has several destinations; prepare one of {', '.join(names)}, or use prepare_all")
+    dest_spec = next(d for d in pipeline.destination_specs if destination in (None, d.connection))
+    dest_type, dest_conf, where = project.connection(dest_spec.connection, env)
     dest_conf = secrets.resolve(dest_conf, where)
-    dest_opts = secrets.resolve(pipeline.destination.options(), label)
+    dest_opts = secrets.resolve(dest_spec.options(), label)
+    dest_cls = registry.get("destinations", dest_type)
 
     engine_name = engine or pipeline.engine or project.config.defaults.engine
     if source_type == "dlt" and source_opts.get("incremental") and engine_name != "dlt":
         raise CartageError(f"{label}: dlt sources with 'incremental' need the dlt engine (current: {engine_name})",
                            hint="Set engine: dlt in the pipeline, or remove incremental")
+    if hasattr(dest_cls, "dlt_destination") and engine_name != "dlt":
+        raise CartageError(f"{label}: dlt destinations need the dlt engine (current: {engine_name})",
+                           hint="Set engine: dlt in the pipeline, or in cartage.yaml defaults")
 
     steps = load_steps(pipeline.transforms, project.root)
     source = registry.get("sources", source_type)(source_conf, source_opts, project.root)
-    destination = registry.get("destinations", dest_type)(dest_conf, dest_opts, project.root)
+    destination = dest_cls(dest_conf, dest_opts, project.root)
+    if getattr(destination, "dataset_name", "") is None:  # dlt destinations default to the pipeline, not the run name
+        destination.dataset_name = pipeline.name
     engine_obj = registry.get("engines", engine_name)()
-    store = StateStore(state_backend(project, env, secrets), pipeline.name, env)
-    return Prepared(project, pipeline, env, source_type, dest_type, engine_name, source, destination, engine_obj, steps, store)
+    name = names[dest_spec.connection]
+    store = StateStore(state_backend(project, env, secrets), name, env)
+    return Prepared(project, pipeline, env, source_type, dest_type, engine_name, source, destination, engine_obj, steps,
+                    store, name, dest_spec)
+
+
+def prepare_all(project: Project, pipeline_ref: str, env: str | None = None, engine: str | None = None) -> list[Prepared]:
+    """One Prepared per destination; a multi-destination pipeline runs once per destination."""
+    return [prepare(project, pipeline_ref, env, engine, d) for d in project.load_pipeline(pipeline_ref).run_names()]
 
 
 def run_pipeline(prep: Prepared, *, advance_state: bool = False, full_refresh: bool = False,
@@ -77,11 +97,11 @@ def run_pipeline(prep: Prepared, *, advance_state: bool = False, full_refresh: b
     state = prep.store.empty() if full_refresh else prep.store.load()
     try:
         try:
-            result = prep.engine.run(prep.pipeline.name, prep.source, prep.steps, prep.destination, state,
+            result = prep.engine.run(prep.name, prep.source, prep.steps, prep.destination, state,
                                      on_progress or (lambda _: None))
         except FatalRunError as e:
             if e.result is not None and e.result.errors:  # keep the partial rejects; state is never saved
-                e.result.rejects_path = str(write_rejects(prep.project.root, prep.pipeline.name, new_run_id(), e.result.errors))
+                e.result.rejects_path = str(write_rejects(prep.project.root, prep.name, new_run_id(), e.result.errors))
             raise
         except CartageError:
             raise
@@ -89,7 +109,7 @@ def run_pipeline(prep: Prepared, *, advance_state: bool = False, full_refresh: b
             raise FatalRunError(f"Run failed: {type(e).__name__}: {e}") from e
         run_id = new_run_id()
         if result.errors:
-            result.rejects_path = str(write_rejects(prep.project.root, prep.pipeline.name, run_id, result.errors))
+            result.rejects_path = str(write_rejects(prep.project.root, prep.name, run_id, result.errors))
         if advance_state or not result.errors:
             state.data["last_run"] = {"run_id": run_id, "read": result.read, "ok": result.ok, "errors": len(result.errors)}
             prep.store.save(state)
@@ -111,8 +131,9 @@ def preview(prep: Prepared, n: int = 3) -> dict:
     spec = pipeline.source
     source = _connection_view(project, spec.connection, env) if spec.connection else {"type": spec.type}
     source["options"] = spec.options()
-    destination = _connection_view(project, pipeline.destination.connection, env)
-    destination["options"] = {k: v for k, v in pipeline.destination.options().items() if k not in ("mapping", "constants")}
+    spec = prep.destination_spec
+    destination = _connection_view(project, spec.connection, env)
+    destination["options"] = {k: v for k, v in spec.options().items() if k not in ("mapping", "constants")}
     data = prep.store.read_data()
     files = ([{"file": f, "process": p} for f, p in prep.source.plan_files(data)]
              if hasattr(prep.source, "plan_files") else None)

@@ -14,7 +14,7 @@ from cartage.checks import check_pipeline
 from cartage.config import load_project
 from cartage.core import FatalRunError
 from cartage.adapters.destinations.sap.transports.mock import make_server
-from cartage.runner import prepare, preview, run_pipeline, state_backend
+from cartage.runner import prepare_all, preview, run_pipeline, state_backend
 from cartage.scaffold import init_project
 from cartage.secrets import Secrets, mask
 from cartage.state import StateStore
@@ -86,27 +86,29 @@ def run(
     full_refresh: bool = typer.Option(False, "--full-refresh", help="Ignore stored state."),
     as_json: bool = JsonOption,
 ) -> None:
-    """Run a pipeline."""
+    """Run a pipeline (once per destination, in order; stops at the first fatal error)."""
+    failed = False
     with ui.handle_errors(OPTS.debug):
-        prep = prepare(load_project(OPTS.project_dir), pipeline, env, engine)
-        try:
-            if as_json:
-                result = run_pipeline(prep, advance_state=advance_state, full_refresh=full_refresh)
-                typer.echo(json.dumps(result.to_dict(), default=str))
-            else:
-                ui.run_header(prep.pipeline.name, prep.env, prep.engine_name)
-                with ui.RunProgress(prep.pipeline.name) as progress:
-                    result = run_pipeline(prep, advance_state=advance_state, full_refresh=full_refresh,
-                                          on_progress=progress.update)
-                ui.run_summary(result, prep.pipeline.name, prep.env)
-        except FatalRunError as e:  # report what was committed before the run stopped (spec §6)
-            if e.result is not None:
+        for prep in prepare_all(load_project(OPTS.project_dir), pipeline, env, engine):
+            try:
                 if as_json:
-                    typer.echo(json.dumps({**e.result.to_dict(), "fatal": mask(e.message)}, default=str))
+                    result = run_pipeline(prep, advance_state=advance_state, full_refresh=full_refresh)
+                    typer.echo(json.dumps(result.to_dict(), default=str))
                 else:
-                    ui.run_summary(e.result, prep.pipeline.name, prep.env, fatal=True)
-            raise
-    if result.errors:
+                    ui.run_header(prep.name, prep.env, prep.engine_name)
+                    with ui.RunProgress(prep.name) as progress:
+                        result = run_pipeline(prep, advance_state=advance_state, full_refresh=full_refresh,
+                                              on_progress=progress.update)
+                    ui.run_summary(result, prep.name, prep.env)
+            except FatalRunError as e:  # report what was committed before the run stopped (spec §6)
+                if e.result is not None:
+                    if as_json:
+                        typer.echo(json.dumps({**e.result.to_dict(), "fatal": mask(e.message)}, default=str))
+                    else:
+                        ui.run_summary(e.result, prep.name, prep.env, fatal=True)
+                raise
+            failed = failed or bool(result.errors)
+    if failed:
         raise typer.Exit(1)
 
 
@@ -139,11 +141,12 @@ def plan(
 ) -> None:
     """Dry run: show files to process and the first records before/after transforms and as BAPI payloads."""
     with ui.handle_errors(OPTS.debug):
-        data = preview(prepare(load_project(OPTS.project_dir), pipeline, env, engine), n)
+        previews = [preview(prep, n) for prep in prepare_all(load_project(OPTS.project_dir), pipeline, env, engine)]
     if as_json:
-        typer.echo(json.dumps(data, default=str))
+        typer.echo(json.dumps(previews[0] if len(previews) == 1 else previews, default=str))
     else:
-        ui.plan_view(data)
+        for data in previews:
+            ui.plan_view(data)
 
 
 connections_app = typer.Typer(help="Inspect and test connections.", no_args_is_help=True)
@@ -173,19 +176,22 @@ def connections_test(name: str = typer.Argument(..., help="Connection name."), e
     ui.console.print(ui.Text.assemble(("✔ ", "green"), (name, "bold"), f" ({ctype}, {env}): ", mask(message)))
 
 
-def _store(pipeline: str, env: str | None) -> tuple[StateStore, str, str]:
+def _stores(pipeline: str, env: str | None) -> tuple[dict[str, StateStore], str, str]:
+    """State stores by run name: one per destination."""
     project = load_project(OPTS.project_dir)
     env = project.resolve_env(env)
-    name = project.load_pipeline(pipeline).name
-    return StateStore(state_backend(project, env, Secrets(project.root)), name, env), name, env
+    loaded = project.load_pipeline(pipeline)
+    backend = state_backend(project, env, Secrets(project.root))
+    return {name: StateStore(backend, name, env) for name in loaded.run_names().values()}, loaded.name, env
 
 
 @state_app.command("show")
 def state_show(pipeline: str = typer.Argument(..., help="Pipeline file or name."), env: str | None = EnvOption) -> None:
     """Show stored state (processed files, dlt archive, last run)."""
     with ui.handle_errors(OPTS.debug):
-        store, _, _ = _store(pipeline, env)
-        typer.echo(json.dumps(store.show(), indent=2))
+        stores, _, _ = _stores(pipeline, env)
+        shown = {name: store.show() for name, store in stores.items()}
+        typer.echo(json.dumps(next(iter(shown.values())) if len(shown) == 1 else shown, indent=2))
 
 
 @state_app.command("reset")
@@ -194,14 +200,15 @@ def state_reset(
     env: str | None = EnvOption,
     yes: bool = typer.Option(False, "--yes", "-y", help="Do not ask for confirmation."),
 ) -> None:
-    """Delete stored state so the next run starts from scratch."""
+    """Delete stored state so the next run starts from scratch (every destination)."""
     with ui.handle_errors(OPTS.debug):
-        store, name, env = _store(pipeline, env)
+        stores, name, env = _stores(pipeline, env)
     if not yes and not typer.confirm(f"Delete stored state for {name} ({env})?"):
         ui.console.print("cancelled")
         raise typer.Exit(0)
     with ui.handle_errors(OPTS.debug):
-        store.reset()
+        for store in stores.values():
+            store.reset()
     ui.console.print(ui.Text.assemble(("✔ ", "green"), f"state for {name} ({env}) deleted"))
 
 

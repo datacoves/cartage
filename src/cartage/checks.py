@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from cartage.config import Project
 from cartage.core import CartageError
-from cartage.runner import prepare
+from cartage.runner import prepare_all
 from cartage.secrets import mask
 from cartage.transforms import load_steps
 
@@ -36,9 +36,10 @@ def check_pipeline(project: Project, ref: str, env: str | None) -> tuple[str, li
     except CartageError as e:
         return pipeline.name, [*checks, _failed("transforms", e)]
     try:
-        prep = prepare(project, str(pipeline.path), env)
+        preps = prepare_all(project, str(pipeline.path), env)
         checks.append(Check("connections, secrets and adapters", True,
-                            f"{prep.source_type} → {prep.destination_type} · engine {prep.engine_name}"))
+                            f"{preps[0].source_type} → {', '.join(p.destination_type for p in preps)}"
+                            f" · engine {preps[0].engine_name}"))
     except CartageError as e:
         checks.append(_failed("connections, secrets and adapters", e))
     return pipeline.name, checks

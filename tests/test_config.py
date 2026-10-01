@@ -73,7 +73,49 @@ def test_load_pipeline_by_bare_name(root):
         ("batch", "transforms.materials:dedupe", {"key": "material"}),
     ]
     assert pipeline.destination.options() == {"bapi": "BAPI_MATERIAL_SAVEDATA"}
+    assert pipeline.destination_specs == [pipeline.destination]
     assert pipeline.path == (root / "pipelines" / "materials.yaml").resolve()
+
+
+def test_multiple_pipeline_destinations(root):
+    pipeline_text = PIPELINE.replace(
+        "destination:\n  connection: sap_erp\n  bapi: BAPI_MATERIAL_SAVEDATA\n",
+        "destinations:\n  - connection: sap_erp\n    bapi: BAPI_MATERIAL_SAVEDATA\n  - connection: warehouse\n    table_name: materials\n",
+    )
+    connections_text = CONNECTIONS.replace(
+        "  local_files:\n",
+        "  warehouse:\n    type: dlt\n    envs:\n      dev: { destination: filesystem, bucket_url: file:///tmp/cartage-tests }\n  local_files:\n",
+    )
+    (root / "connections.yaml").write_text(connections_text)
+    (root / "pipelines" / "materials.yaml").write_text(pipeline_text)
+
+    destinations = load_project(root).load_pipeline("materials").destination_specs
+
+    assert [spec.connection for spec in destinations] == ["sap_erp", "warehouse"]
+    assert destinations[1].options() == {"table_name": "materials"}
+
+
+@pytest.mark.parametrize(
+    "replacement, message",
+    [
+        (
+            "destination:\n  connection: sap_erp\n  bapi: BAPI_MATERIAL_SAVEDATA\ndestinations:\n  - connection: warehouse\n",
+            "either 'destination' or 'destinations'",
+        ),
+        (
+            "destinations:\n  - connection: sap_erp\n  - connection: sap_erp\n",
+            "destination connections must be unique",
+        ),
+        ("", "set 'destination' or a non-empty 'destinations' list"),
+    ],
+)
+def test_invalid_destination_selection(root, replacement, message):
+    pipeline_text = PIPELINE.replace(
+        "destination:\n  connection: sap_erp\n  bapi: BAPI_MATERIAL_SAVEDATA\n", replacement
+    )
+    (root / "pipelines" / "materials.yaml").write_text(pipeline_text)
+    with pytest.raises(CartageError, match=message):
+        load_project(root).load_pipeline("materials")
 
 
 def test_pipeline_error_points_at_line(root):

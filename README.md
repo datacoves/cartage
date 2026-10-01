@@ -6,7 +6,7 @@ Python, run locally to test, and generate thin Airflow DAGs for production.
 ![Cartage terminal demo](https://raw.githubusercontent.com/datacoves/cartage/main/docs/cartage-demo.gif)
 
 - **Sources:** local CSV folders, S3, and any [dlt](https://dlthub.com) source.
-- **Destinations:** SAP via BAPIs (v0.1 ships a mock SAP; RFC is planned).
+- **Destinations:** SAP via BAPIs (v0.1 ships a mock SAP; RFC is planned) and any dlt destination.
 - **Engines:** `python` (a plain loop) and `dlt`.
 - **Orchestrators:** Airflow. The DAG only calls `cartage run`, so local and production run the same code.
 
@@ -32,7 +32,7 @@ in `connections.yaml`, and run the pipeline in another terminal.
 | ----------------------------- | ---------------------------------------------------------------------------- |
 | `cartage.yaml`                | environments, default engine, state location, orchestrator settings          |
 | `connections.yaml`            | named connections with settings per environment — secrets only as references |
-| `pipelines/*.yaml`            | source → transforms → destination (+ schedule)                               |
+| `pipelines/*.yaml`            | source → transforms → destination(s) (+ schedule)                            |
 | `transforms/*.py`             | `map` / `filter` / `batch` functions referenced as `module:function`         |
 | `templates/airflow/dag.py.j2` | optional DAG template override (`{% extends "cartage/airflow_dag.py.j2" %}`) |
 | `.cartage/`                   | git-ignored: `secrets.yaml`, `state/`, `rejects/`                            |
@@ -40,7 +40,7 @@ in `connections.yaml`, and run the pipeline in another terminal.
 ## YAML configuration
 
 Cartage uses three YAML layers: `cartage.yaml` sets project-wide defaults, `connections.yaml` defines named services
-per environment, and each `pipelines/*.yaml` file describes one source-to-destination flow.
+per environment, and each `pipelines/*.yaml` file describes one source-to-destination flow (or fan-out).
 
 ### `cartage.yaml`
 
@@ -131,6 +131,58 @@ schedule:
 Source and destination fields other than `connection` are adapter options. Transform functions live in your `transforms/`
 package; `with` passes keyword arguments to the function. The optional `schedule.airflow` block controls DAG generation
 with `cartage generate`. Run `cartage validate` after editing YAML to check the project and references.
+
+#### dlt destinations
+
+Any [dlt destination](https://dlthub.com/docs/dlt-ecosystem/destinations/) (filesystem/S3, DuckDB, Postgres,
+Snowflake, BigQuery, ...) is a `type: dlt` connection. `destination` names a `dlt.destinations` factory, or a project
+`module:function` returning one; the other settings are passed to it. Install the driver extra too, e.g.
+`pip install "cartage[dlt]" "dlt[snowflake]"`. dlt destinations need `engine: dlt`.
+
+```yaml
+connections:
+  warehouse:
+    type: dlt
+    envs:
+      dev: { destination: filesystem, bucket_url: "file:///tmp/warehouse" }
+      prd:
+        destination: snowflake
+        credentials: "${secret:snowflake.connection_string}"
+        naming: sql_ci_v1                              # connection-level default
+```
+
+```yaml
+destination:
+  connection: warehouse
+  dataset_name: raw                 # default: the pipeline name
+  table_name: materials             # default: the source resource name
+  write_disposition: merge          # append (default) | replace | merge
+  primary_key: material             # merge needs primary_key or merge_key
+  columns: { price: { data_type: decimal, precision: 18, scale: 4 } }
+  loader_file_format: parquet
+  naming: direct                    # dlt naming convention, or a project module (e.g. naming.upper)
+  dlt_config:                       # any dlt config key, applied to this run only
+    data_writer.buffer_max_items: 100000
+    extract.max_parallel_items: 15
+```
+
+The dlt engine loads straight into the destination: bulk loads, staging and merge are dlt's, run once per run.
+Without `transforms`, source batches reach dlt untouched, so Arrow/pandas batches (e.g. `sql_database` with the
+pyarrow backend, ConnectorX) stay columnar. dlt fails whole load jobs, not single records: a failed load stops the
+run and state is not saved. Database-specific extraction (casts for Oracle LOBs and NUMBERs, MSSQL datetime2, Postgres
+enums and timestamptz, time zones) belongs in your dlt source factory, not in Cartage.
+
+#### Multiple destinations
+
+Use `destinations:` instead of `destination:`. Each entry is its own run, in order, with its own state, rejects and
+dlt pipeline (`<pipeline>__<connection>`), so a failed destination retries without reloading the others. The source is
+read once per destination; to read it once, land it in filesystem/S3 first and load from there.
+
+```yaml
+destinations:
+  - { connection: warehouse, table_name: materials, write_disposition: merge, primary_key: material }
+  - { connection: sap_erp, bapi: BAPI_MATERIAL_SAVEDATA, mapping: { ... } }
+```
 
 ## Batches
 

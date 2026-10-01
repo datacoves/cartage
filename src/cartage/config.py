@@ -1,6 +1,7 @@
 """Load and validate cartage.yaml, connections.yaml and pipeline files, keeping line numbers for errors."""
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -113,10 +114,33 @@ class Pipeline(BaseModel):
     name: str = Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")
     source: SourceSpec
     transforms: list[TransformSpec] = Field(default_factory=list)
-    destination: DestinationSpec
+    destination: DestinationSpec | None = None
+    destinations: list[DestinationSpec] = Field(default_factory=list)
     engine: str | None = None
     schedule: dict[str, dict[str, Any]] = Field(default_factory=dict)
     path: Path | None = Field(default=None, exclude=True)
+
+    @model_validator(mode="after")
+    def _destination_selection(self):
+        if self.destination is not None and self.destinations:
+            raise ValueError("set either 'destination' or 'destinations', not both")
+        if self.destination is None and not self.destinations:
+            raise ValueError("set 'destination' or a non-empty 'destinations' list")
+        names = [spec.connection for spec in self.destinations]
+        if len(names) != len(set(names)):
+            raise ValueError("destination connections must be unique within a pipeline")
+        return self
+
+    @property
+    def destination_specs(self) -> list[DestinationSpec]:
+        return [self.destination] if self.destination is not None else self.destinations
+
+    def run_names(self) -> dict[str, str]:
+        """Destination connection → run name. Each destination of a multi-destination pipeline is its own run,
+        with its own state, rejects and dlt pipeline, so one failing target retries without reloading the others."""
+        if self.destination is not None:
+            return {self.destination.connection: self.name}
+        return {d.connection: f"{self.name}__{re.sub(r'[^A-Za-z0-9_]', '_', d.connection)}" for d in self.destinations}
 
 
 _yaml = YAML(typ="rt")

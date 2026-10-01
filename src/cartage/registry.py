@@ -6,7 +6,13 @@ from importlib.metadata import EntryPoint, entry_points
 from cartage.core import CartageError
 
 KINDS = ("sources", "destinations", "engines", "orchestrators")
-EXTRAS = {("sources", "dlt"): "dlt", ("engines", "dlt"): "dlt", ("sources", "s3"): "s3", ("orchestrators", "airflow"): "airflow"}
+EXTRAS = {
+    ("sources", "dlt"): "dlt",
+    ("destinations", "dlt"): "dlt",
+    ("engines", "dlt"): "dlt",
+    ("sources", "s3"): "s3",
+    ("orchestrators", "airflow"): "airflow",
+}
 
 
 def available(kind: str) -> dict[str, EntryPoint]:
@@ -27,7 +33,7 @@ def get(kind: str, name: str) -> type:
 
 
 def connection_class(type_name: str) -> type:
-    for kind in ("sources", "destinations"):
+    for kind in ("destinations", "sources"):  # `dlt` is both; only its destination is a connection type
         if type_name in available(kind):
             return get(kind, type_name)
     known = sorted({*available("sources"), *available("destinations")})

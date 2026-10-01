@@ -2,6 +2,7 @@
 """Any dlt source or resource, referenced as module:function."""
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Iterator
 
@@ -18,11 +19,18 @@ class DltSourceAdapter:
             raise CartageError("A dlt source needs 'ref'", hint="e.g. ref: sources.legacy_erp:materials")
         self.ref = options["ref"]
         self.kwargs = options.get("with") or {}
+        if not isinstance(self.kwargs, Mapping):
+            raise CartageError("dlt source 'with' must be a mapping of factory keyword arguments")
         self.incremental = options.get("incremental") or None
         if self.incremental is not None and not (isinstance(self.incremental, dict) and "cursor" in self.incremental):
             raise CartageError("dlt source 'incremental' must be a mapping with 'cursor'",
                                hint='incremental: { cursor: updated_at, initial: "2024-01-01" }')
-        self.batch_size = int(options.get("batch_size", 100))
+        try:
+            self.batch_size = int(options.get("batch_size", 100))
+        except (TypeError, ValueError) as error:
+            raise CartageError("dlt source 'batch_size' must be a positive integer") from error
+        if self.batch_size < 1:
+            raise CartageError("dlt source 'batch_size' must be a positive integer")
         self.root = root
 
     def _resources(self) -> list[DltResource]:

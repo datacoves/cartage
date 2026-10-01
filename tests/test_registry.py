@@ -8,7 +8,7 @@ from cartage.core import CartageError
 
 def test_builtins_are_registered():
     assert {"filesystem", "s3", "dlt"} <= set(registry.available("sources"))
-    assert "sap" in registry.available("destinations")
+    assert {"sap", "dlt"} <= set(registry.available("destinations"))
     assert {"python", "dlt"} <= set(registry.available("engines"))
     assert "airflow" in registry.available("orchestrators")
 
@@ -28,5 +28,5 @@ def test_unknown_connection_type():
 def test_plugins_command_lists_adapters():
     result = CliRunner().invoke(app, ["plugins"])
     assert result.exit_code == 0
-    for name in ("filesystem", "sap", "python", "airflow"):
+    for name in ("filesystem", "sap", "dlt", "python", "airflow"):
         assert name in result.output
