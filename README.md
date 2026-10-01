@@ -28,14 +28,14 @@ in `connections.yaml`, and run the pipeline in another terminal.
 
 ## Project layout
 
-| Path | Purpose |
-|---|---|
-| `cartage.yaml` | environments, default engine, state location, orchestrator settings |
-| `connections.yaml` | named connections with settings per environment — secrets only as references |
-| `pipelines/*.yaml` | source → transforms → destination (+ schedule) |
-| `transforms/*.py` | `map` / `filter` / `batch` functions referenced as `module:function` |
+| Path                          | Purpose                                                                      |
+| ----------------------------- | ---------------------------------------------------------------------------- |
+| `cartage.yaml`                | environments, default engine, state location, orchestrator settings          |
+| `connections.yaml`            | named connections with settings per environment — secrets only as references |
+| `pipelines/*.yaml`            | source → transforms → destination (+ schedule)                               |
+| `transforms/*.py`             | `map` / `filter` / `batch` functions referenced as `module:function`         |
 | `templates/airflow/dag.py.j2` | optional DAG template override (`{% extends "cartage/airflow_dag.py.j2" %}`) |
-| `.cartage/` | git-ignored: `secrets.yaml`, `state/`, `rejects/` |
+| `.cartage/`                   | git-ignored: `secrets.yaml`, `state/`, `rejects/`                            |
 
 ## YAML configuration
 

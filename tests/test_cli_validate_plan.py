@@ -20,7 +20,9 @@ def test_validate_demo_ok(project):
 
 def test_validate_reports_bad_mapping(project):
     pipeline = project / "pipelines/materials.yaml"
-    pipeline.write_text(pipeline.read_text().replace("HEADDATA.IND_SECTOR", "HEADDATA.NOPE"))
+    pipeline.write_text(
+        pipeline.read_text().replace("HEADDATA.IND_SECTOR", "HEADDATA.NOPE")
+    )
     result = cli(project, "validate")
     assert result.exit_code == 2
     assert "HEADDATA has no field NOPE" in result.output
@@ -28,7 +30,11 @@ def test_validate_reports_bad_mapping(project):
 
 def test_validate_reports_bad_transform(project):
     pipeline = project / "pipelines/materials.yaml"
-    pipeline.write_text(pipeline.read_text().replace("transforms.materials:is_active", "transforms.materials:nope"))
+    pipeline.write_text(
+        pipeline.read_text().replace(
+            "transforms.materials:is_active", "transforms.materials:nope"
+        )
+    )
     data = json.loads(cli(project, "validate", "--json").stdout)
     [transforms] = [c for c in data[0]["checks"] if c["label"] == "transforms"]
     assert transforms["ok"] is False and "'nope' not found" in transforms["detail"]
@@ -57,7 +63,11 @@ def test_plan_rich_output(project):
     result = cli(project, "plan", "materials", "--engine", "python", "-n", "3")
     assert result.exit_code == 0, result.output
     assert "record 1" in result.output and "record 3" in result.output
-    assert "source:" in result.output and "transformed:" in result.output and "bapi:" in result.output
+    assert (
+        "source:" in result.output
+        and "transformed:" in result.output
+        and "bapi:" in result.output
+    )
     assert "uom: KGS" in result.output and "uom: KG" in result.output
     assert "HEADDATA:" in result.output and "MATERIAL: '100003'" in result.output
 
@@ -67,17 +77,26 @@ def test_failed_check_masks_secrets(tmp_path):
     from cartage.core import CartageError
     from cartage.secrets import Secrets
 
-    Secrets(tmp_path, environ={"CARTAGE_SECRET__X__Y": "hunter2value"}).resolve("${secret:x.y}", "t")
+    Secrets(tmp_path, environ={"CARTAGE_SECRET__X__Y": "hunter2value"}).resolve(
+        "${secret:x.y}", "t"
+    )
     detail = _failed("lbl", CartageError("login failed for hunter2value")).detail
     assert "****" in detail and "hunter2value" not in detail
 
 
 def test_plan_never_prints_resolved_secrets(project, monkeypatch):
     conn = project / "connections.yaml"
-    conn.write_text(conn.read_text().replace(
-        'dev: { transport: mock, client: "100" }', 'dev: { transport: mock, client: "${secret:sap.client}" }'))
+    conn.write_text(
+        conn.read_text().replace(
+            'dev: { transport: mock, client: "100" }',
+            'dev: { transport: mock, client: "${secret:sap.client}" }',
+        )
+    )
     monkeypatch.setenv("CARTAGE_SECRET__SAP__CLIENT", "hunter2client")
     for extra in ([], ["--json"]):
         result = cli(project, "plan", "materials", "--engine", "python", *extra)
         assert result.exit_code == 0, result.output
-        assert "${secret:sap.client}" in result.output and "hunter2client" not in result.output
+        assert (
+            "${secret:sap.client}" in result.output
+            and "hunter2client" not in result.output
+        )
