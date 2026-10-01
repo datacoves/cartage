@@ -3,21 +3,43 @@
 Declarative data migrations. Describe sources, destinations and pipelines in YAML, put custom logic in plain
 Python, run locally to test, and generate thin Airflow DAGs, Dagster jobs or Prefect flows for production.
 
+Cartage is an abstraction and simplification layer over data load tools. You describe what to move and how to
+reshape it; an engine moves the data. [dlt](https://dlthub.com) is the default engine. The engine is pluggable, so
+other load tools can be supported later without changing your pipelines.
+
+```text
+  what you write      cartage.yaml · connections.yaml · pipelines/*.yaml · transforms/*.py
+                                              │
+                                              ▼
+                ┌───────────────────────── Cartage ─────────────────────────┐
+                │  validate · plan · run · state · rejects                  │
+                │  secrets: ${secret:…} ${env:…} ${airflow:…}               │
+                │  generate: Airflow · Dagster · Prefect  (they call `run`) │
+                └─────────────────────────────┬─────────────────────────────┘
+                                              │ runs each pipeline on
+                ┌───────────────────────── engine ──────────────────────────┐
+                │  dlt (default)  │  python (reference)  │  future: others  │
+                └───────┬─────────────────────────────────────────┬─────────┘
+                        │ reads                                   │ writes
+           files · S3 · any dlt source           SAP · files · any dlt destination
+                        └──── your Python transforms in between ──┘
+```
+
 ![Cartage terminal demo](https://raw.githubusercontent.com/datacoves/cartage/main/docs/cartage-demo.gif)
 
-- **Sources:** local CSV folders, S3, and any [dlt](https://dlthub.com) source.
+- **Sources:** local CSV folders, S3, and any [dlt](https://dlthub.com/docs/dlt-ecosystem/verified-sources/) source.
 - **Destinations:** SAP via BAPIs (ships a mock SAP; the RFC transport is planned) and any
   [dlt destination](https://dlthub.com/docs/dlt-ecosystem/destinations/) (filesystem/S3, DuckDB, Postgres, Snowflake,
   BigQuery, ...), loaded natively by dlt, and local files (JSON, JSON Lines, XML, CSV). One pipeline can write to
   several destinations.
-- **Engines:** `python` (a plain loop) and `dlt`.
+- **Engines:** `dlt` (default) and `python`, a dependency-free reference engine for tests (see [Engines](#engines)).
 - **Orchestrators:** Airflow, Dagster and Prefect. Generated code only calls `cartage run`, so local and production
   run the same code.
 
 ## Quickstart
 
 ```bash
-pip install "cartage[dlt]"
+pip install cartage
 cartage init demo && cd demo
 cartage validate
 cartage plan materials        # dry run: records before/after transforms and the BAPI payloads
@@ -34,17 +56,35 @@ in `connections.yaml`, and run the pipeline in another terminal.
 
 ## Install
 
-Cartage needs Python 3.11.4 or newer. The core install runs the `python` engine over CSV folders; extras add the rest.
+Cartage needs Python 3.11.4 or newer. dlt is included; extras add the rest.
 
 | Install                       | Adds                                                                         |
 | ----------------------------- | ---------------------------------------------------------------------------- |
-| `pip install cartage`         | CLI, filesystem source, SAP destination, `python` engine, all generators     |
-| `pip install "cartage[dlt]"`  | `dlt` engine, dlt sources and destinations                                   |
+| `pip install cartage`         | CLI, both engines, file/dlt sources and destinations, SAP, all generators    |
 | `pip install "cartage[s3]"`   | S3 source and S3 state store                                                 |
-| `pip install "cartage[all]"`  | `dlt`, `s3` and `airflow`                                                    |
+| `pip install "cartage[all]"`  | `s3` and `airflow`                                                           |
 | `pip install "dlt[snowflake]"`| the driver for a dlt destination or source (`postgres`, `bigquery`, ...)     |
 
+`cartage[dlt]` still works; since 0.6 it adds nothing, as dlt is a core dependency.
+
 Generating Airflow, Dagster or Prefect files needs nothing extra; the orchestrator itself runs them.
+
+## Engines
+
+The engine runs a pipeline: it reads from the source, applies your transforms, and hands records to the destination.
+Set it in `cartage.yaml` (`defaults.engine`), per pipeline (`engine:`), or per run (`--engine`).
+
+- **`dlt`** (default) runs every pipeline as a dlt pipeline: dlt's extraction, normalization, incremental state and
+  loading. dlt destinations load natively (bulk loads, staging, merge); record destinations such as SAP and `file`
+  plug in as a dlt custom destination, so Cartage can still report each record's result (rejects, warnings).
+- **`python`** is a plain loop with no dependencies: the reference implementation of the engine contract, for tests
+  and framework development. dlt sources and destinations need the dlt engine.
+
+The engines differ in two ways today: dlt drops fields whose value is `None` before a record destination sees them,
+and the dlt engine hands record destinations batches of 100 (which is what SAP `commit: per_batch` groups).
+
+Engines are plug-ins (the `cartage.engines` entry point group, see [Extending](#extending)), so another load tool can
+become an engine without changing pipelines, as long as it can run Python transforms between reading and writing.
 
 ## Commands
 
@@ -178,10 +218,10 @@ editing YAML to check the project and references.
 | ------------ | ---------------------------------------------------------------- | ------------------------------------------------------------- |
 | `filesystem` | `path`                                                           | `path` (glob), `format: csv`, `incremental`, `batch_size`     |
 | `s3`         | `bucket`, `prefix`, `region`, `endpoint_url`, access keys        | `path` (glob), `format: csv`, `incremental`, `batch_size`     |
-| `dlt`        | none: use `type: dlt` on the source                              | `ref` (`module:function`), `with`, `incremental`, `batch_size` |
+| `dlt`        | none: a source with `ref` is a dlt source                        | `ref` (`module:function`), `with`, `incremental`, `batch_size` |
 
 File sources with `incremental: true` skip files already processed. A dlt source's `ref` returns a dlt source or
-resource; `incremental: { cursor: updated_at, initial: "2024-01-01" }` adds a dlt cursor and needs `engine: dlt`.
+resource; `incremental: { cursor: updated_at, initial: "2024-01-01" }` adds a dlt cursor and needs the dlt engine (the default).
 Other keys go to `dlt.sources.incremental`: `lag` (re-read a window before the last value, e.g. for late updates),
 `end_value`, `primary_key`, `row_order`, `last_value_func`, `on_cursor_value_missing`, `range_start`, `range_end`.
 
@@ -224,7 +264,7 @@ rest.
 Any [dlt destination](https://dlthub.com/docs/dlt-ecosystem/destinations/) (filesystem/S3, DuckDB, Postgres,
 Snowflake, BigQuery, ...) is a `type: dlt` connection. `destination` names a `dlt.destinations` factory, or a project
 `module:function` returning one; the other settings are passed to it. Install the driver extra too, e.g.
-`pip install "cartage[dlt]" "dlt[snowflake]"`. dlt destinations need `engine: dlt`.
+`pip install "dlt[snowflake]"`. dlt destinations need the dlt engine (the default).
 
 ```yaml
 connections:
@@ -277,7 +317,6 @@ def materials(credentials: str, schema: str):
 ```yaml
 name: erp_materials
 source:
-  type: dlt
   ref: sources.erp:materials
   with: { credentials: "${secret:erp.url}", schema: ERP }
   incremental: { cursor: updated_at, initial: "2024-01-01" }
@@ -473,7 +512,6 @@ def materials(db: str, user: str, password: str, dsn: str, table: str, conversio
 
 ```yaml
 source:
-  type: dlt
   ref: sources.erp:materials
   with:
     db: oracle

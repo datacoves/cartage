@@ -151,3 +151,15 @@ def test_connection_lookup(root):
 def test_unknown_env(root):
     with pytest.raises(CartageError, match="Unknown environment 'qa'"):
         load_project(root).resolve_env("qa")
+
+
+def test_engine_defaults_to_dlt(root):
+    assert load_project(root).config.defaults.engine == "dlt"
+
+
+def test_a_ref_source_needs_no_type(root):
+    (root / "pipelines" / "materials.yaml").write_text(PIPELINE.replace(
+        "  connection: local_files\n  format: csv\n  path: materials/*.csv\n  incremental: true\n",
+        "  ref: sources.erp:materials\n"))
+    source = load_project(root).load_pipeline("materials").source
+    assert (source.type, source.options()["ref"]) == ("dlt", "sources.erp:materials")

@@ -19,7 +19,7 @@ CONNECTIONS_FILE = "connections.yaml"
 
 class Defaults(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    engine: str = "python"
+    engine: str = "dlt"  # python: the dependency-free reference engine, for tests and framework work
 
 
 class StateConfig(BaseModel):
@@ -70,6 +70,8 @@ class SourceSpec(BaseModel):
 
     @model_validator(mode="after")
     def _connection_or_type(self):
+        if self.connection is None and self.type is None and (self.model_extra or {}).get("ref"):
+            self.type = "dlt"  # a `ref` is a dlt source written in Python
         if (self.connection is None) == (self.type is None):
             raise ValueError("set exactly one of 'connection' or 'type'")
         return self

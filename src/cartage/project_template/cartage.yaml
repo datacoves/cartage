@@ -4,7 +4,7 @@ environments: [dev, prd]
 default_env: dev
 
 defaults:
-  engine: dlt          # or: python (needs no extra dependencies)
+  engine: dlt          # the default; python is a dependency-free reference engine for tests
 
 # Where incremental state lives, per environment (default: .cartage/state).
 # prd: { connection: materials_s3, prefix: cartage/state/ }

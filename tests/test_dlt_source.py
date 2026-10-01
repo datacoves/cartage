@@ -88,3 +88,10 @@ def test_ref_must_return_dlt_object(project):
     result = runner.invoke(app, ["-C", str(project), "run", "erp"])
     assert result.exit_code == 2
     assert "expected a dlt source or resource" in result.output
+
+
+def test_ref_without_type_runs_as_a_dlt_source(project):
+    setup(project, PIPELINE.replace("  type: dlt\n", ""))
+    result = run(project)
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["read"] == 3

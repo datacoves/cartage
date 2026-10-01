@@ -7,9 +7,6 @@ from cartage.core import CartageError
 
 KINDS = ("sources", "destinations", "engines", "orchestrators")
 EXTRAS = {
-    ("sources", "dlt"): "dlt",
-    ("destinations", "dlt"): "dlt",
-    ("engines", "dlt"): "dlt",
     ("sources", "s3"): "s3",
     ("orchestrators", "airflow"): "airflow",
 }
