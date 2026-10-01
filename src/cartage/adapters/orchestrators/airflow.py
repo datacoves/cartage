@@ -30,17 +30,17 @@ DEFAULTS: dict[str, Any] = {
 RESERVED_KWARGS = {"task_id", "bash_command", "executor_config"}
 
 
-def _check_literal(name: str, value: Any) -> None:
+def _check_literal(name: str, value: Any, target: str = "Airflow") -> None:
     """Values are rendered with repr(), so only plain YAML scalars/lists/dicts are safe."""
     if isinstance(value, dict):
         for k, v in value.items():
-            _check_literal(name, k)
-            _check_literal(name, v)
+            _check_literal(name, k, target)
+            _check_literal(name, v, target)
     elif isinstance(value, list):
         for v in value:
-            _check_literal(name, v)
+            _check_literal(name, v, target)
     elif value is not None and not isinstance(value, (str, int, float, bool)):
-        raise CartageError(f"Airflow setting '{name}' contains a {type(value).__name__} value; quote it in YAML")
+        raise CartageError(f"{target} setting '{name}' contains a {type(value).__name__} value; quote it in YAML")
 
 
 def merge(base: dict, override: dict) -> dict:

@@ -215,12 +215,12 @@ def state_reset(
 @app.command()
 def generate(
     pipelines: list[str] | None = typer.Argument(None, help="Pipelines (default: all with a schedule)."),
-    target: str = typer.Option("airflow", "--target", "-t", help="Orchestrator."),
+    target: str = typer.Option("airflow", "--target", "-t", help="Orchestrator: airflow, dagster or prefect."),
     output: Path | None = typer.Option(None, "--output", "-o", help="Output folder (default: dags_dir setting)."),
     check: bool = typer.Option(False, "--check", help="Exit 1 if generated files are missing or out of date."),
     show_context: str | None = typer.Option(None, "--show-context", metavar="PIPELINE", help="Print template variables."),
 ) -> None:
-    """Generate orchestrator files (Airflow DAGs) that call `cartage run`."""
+    """Generate orchestrator files (Airflow DAGs, Dagster jobs, Prefect flows) that call `cartage run`."""
     with ui.handle_errors(OPTS.debug):
         project = load_project(OPTS.project_dir)
         orchestrator = registry.get("orchestrators", target)()

@@ -1,7 +1,7 @@
 # Cartage
 
 Declarative data migrations. Describe sources, destinations and pipelines in YAML, put custom logic in plain
-Python, run locally to test, and generate thin Airflow DAGs for production.
+Python, run locally to test, and generate thin Airflow DAGs, Dagster jobs or Prefect flows for production.
 
 ![Cartage terminal demo](https://raw.githubusercontent.com/datacoves/cartage/main/docs/cartage-demo.gif)
 
@@ -10,7 +10,8 @@ Python, run locally to test, and generate thin Airflow DAGs for production.
   [dlt destination](https://dlthub.com/docs/dlt-ecosystem/destinations/) (filesystem/S3, DuckDB, Postgres, Snowflake,
   BigQuery, ...), loaded natively by dlt. One pipeline can write to several destinations.
 - **Engines:** `python` (a plain loop) and `dlt`.
-- **Orchestrators:** Airflow. The DAG only calls `cartage run`, so local and production run the same code.
+- **Orchestrators:** Airflow, Dagster and Prefect. Generated code only calls `cartage run`, so local and production
+  run the same code.
 
 ## Quickstart
 
@@ -23,6 +24,8 @@ cartage run materials         # reads 20 rows, filters 2, sends 18: 16 load, 2 f
 cartage run materials --advance-state
 cartage run materials         # incremental: nothing new to load
 cartage generate              # dags/materials_to_sap.py
+cartage generate -t dagster   # orchestration/dagster/<pipeline>.py, for pipelines with schedule.dagster
+cartage generate -t prefect   # orchestration/prefect/<pipeline>.py, for pipelines with schedule.prefect
 ```
 
 Split-screen demo: run `cartage sap mock` in one terminal, set `url: http://localhost:8765` on `sap_erp.dev`
@@ -37,6 +40,7 @@ in `connections.yaml`, and run the pipeline in another terminal.
 | `pipelines/*.yaml`            | source → transforms → destination(s) (+ schedule)                            |
 | `transforms/*.py`             | `map` / `filter` / `batch` functions referenced as `module:function`         |
 | `templates/airflow/dag.py.j2` | optional DAG template override (`{% extends "cartage/airflow_dag.py.j2" %}`) |
+| `templates/dagster/dagster.py.j2`, `templates/prefect/prefect.py.j2` | optional overrides (`{% extends "cartage/dagster.py.j2" %}`) |
 | `.cartage/`                   | git-ignored: `secrets.yaml`, `state/`, `rejects/`                            |
 
 ## YAML configuration
@@ -132,8 +136,8 @@ schedule:
 ```
 
 Source and destination fields other than `connection` are adapter options. Transform functions live in your `transforms/`
-package; `with` passes keyword arguments to the function. The optional `schedule.airflow` block controls DAG generation
-with `cartage generate`. Run `cartage validate` after editing YAML to check the project and references.
+package; `with` passes keyword arguments to the function. The optional `schedule.airflow`, `schedule.dagster` and
+`schedule.prefect` blocks control generation with `cartage generate` (see [Orchestrators](#orchestrators)). Run `cartage validate` after editing YAML to check the project and references.
 
 #### dlt destinations
 
@@ -186,6 +190,32 @@ destinations:
   - { connection: warehouse, table_name: materials, write_disposition: merge, primary_key: material }
   - { connection: sap_erp, bapi: BAPI_MATERIAL_SAVEDATA, mapping: { ... } }
 ```
+
+## Orchestrators
+
+`cartage generate --target airflow|dagster|prefect` writes one file per pipeline that has a `schedule.<target>` block.
+Each file only runs `cartage --project-dir <project> run <pipeline> --env <env>`, so deploy the Cartage project (with
+`transforms/`) next to it. Settings merge: built-in defaults ← `orchestrators.<target>` in `cartage.yaml` ← the
+pipeline's `schedule.<target>` (dicts merge by key). Add `--check` in CI to fail on stale files.
+
+```yaml
+schedule:
+  airflow: { schedule: "0 3 * * *", tags: [sap] }
+  dagster: { schedule: "0 3 * * *", tags: { team: data }, timezone: Europe/Brussels }
+  prefect: { schedule: "0 3 * * *", tags: [sap], retries: 2 }
+```
+
+| Target  | Output (default)                        | Settings                                                                    | Environment at run time  |
+| ------- | --------------------------------------- | --------------------------------------------------------------------------- | ------------------------ |
+| airflow | `dags/<dag_id>.py`                      | `dags_dir`, `schedule`, `tags`, `default_args`, `operator`, `image`, ...    | Airflow var `cartage_env` |
+| dagster | `orchestration/dagster/<name>.py`       | `out_dir`, `name`, `schedule`, `timezone`, `tags`, `env`, `command`, `project_dir` | `CARTAGE_ENV` env var  |
+| prefect | `orchestration/prefect/<name>.py`       | `out_dir`, `name`, `schedule`, `retries`, `tags`, `env`, `command`, `project_dir`  | `CARTAGE_ENV` env var  |
+
+- **Dagster:** each file defines a job, its schedule, and `defs = dg.Definitions(...)`. Load it with
+  `dagster dev -f orchestration/dagster/<name>.py` (repeat `-f` per pipeline), or merge the `defs` objects.
+- **Prefect:** each file defines the `cartage_run` flow. `python orchestration/prefect/<name>.py` serves it on the
+  schedule, or point `prefect deploy` at `orchestration/prefect/<name>.py:cartage_run`.
+- `env` defaults to `prd`; `command` (default `cartage`) may include a launcher, e.g. `uv run cartage`.
 
 ## Batches
 
