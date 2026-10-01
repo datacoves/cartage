@@ -6,7 +6,7 @@ Python, run locally to test, and generate thin Airflow DAGs, Dagster jobs or Pre
 ![Cartage terminal demo](https://raw.githubusercontent.com/datacoves/cartage/main/docs/cartage-demo.gif)
 
 - **Sources:** local CSV folders, S3, and any [dlt](https://dlthub.com) source.
-- **Destinations:** SAP via BAPIs (v0.1 ships a mock SAP; RFC is planned) and any
+- **Destinations:** SAP via BAPIs (ships a mock SAP; the RFC transport is planned) and any
   [dlt destination](https://dlthub.com/docs/dlt-ecosystem/destinations/) (filesystem/S3, DuckDB, Postgres, Snowflake,
   BigQuery, ...), loaded natively by dlt. One pipeline can write to several destinations.
 - **Engines:** `python` (a plain loop) and `dlt`.
@@ -31,6 +31,36 @@ cartage generate -t prefect   # orchestration/prefect/<pipeline>.py, for pipelin
 Split-screen demo: run `cartage sap mock` in one terminal, set `url: http://localhost:8765` on `sap_erp.dev`
 in `connections.yaml`, and run the pipeline in another terminal.
 
+## Install
+
+Cartage needs Python 3.11.4 or newer. The core install runs the `python` engine over CSV folders; extras add the rest.
+
+| Install                       | Adds                                                                         |
+| ----------------------------- | ---------------------------------------------------------------------------- |
+| `pip install cartage`         | CLI, filesystem source, SAP destination, `python` engine, all generators     |
+| `pip install "cartage[dlt]"`  | `dlt` engine, dlt sources and destinations                                   |
+| `pip install "cartage[s3]"`   | S3 source and S3 state store                                                 |
+| `pip install "cartage[all]"`  | `dlt`, `s3` and `airflow`                                                    |
+| `pip install "dlt[snowflake]"`| the driver for a dlt destination or source (`postgres`, `bigquery`, ...)     |
+
+Generating Airflow, Dagster or Prefect files needs nothing extra; the orchestrator itself runs them.
+
+## Commands
+
+| Command                                           | Does                                                                  |
+| ------------------------------------------------- | --------------------------------------------------------------------- |
+| `cartage init <dir>`                              | create a demo project (CSV → transforms → mock SAP)                   |
+| `cartage validate [pipelines...]`                 | check YAML, connections, secrets, transforms and mappings; moves no data |
+| `cartage plan <pipeline> [-n 3]`                  | dry run: files to process, first records before/after transforms, payloads |
+| `cartage run <pipeline>`                          | run it; `--env`, `--engine`, `--full-refresh`, `--advance-state`, `--json` |
+| `cartage generate [-t airflow\|dagster\|prefect]` | write orchestrator files; `--check`, `--output`, `--show-context <pipeline>` |
+| `cartage connections list\|test <name>`           | list connections (secrets as references) or check one                 |
+| `cartage state show\|reset <pipeline>`            | inspect or delete incremental state                                   |
+| `cartage plugins`                                 | list installed sources, destinations, engines and orchestrators       |
+| `cartage sap mock [--port 8765]`                  | run a mock SAP server that validates BAPI calls                       |
+
+Global options go before the command: `-C/--project-dir`, `-v/--verbose`, `--debug` (tracebacks), `--no-color`.
+
 ## Project layout
 
 | Path                          | Purpose                                                                      |
@@ -40,7 +70,7 @@ in `connections.yaml`, and run the pipeline in another terminal.
 | `pipelines/*.yaml`            | source → transforms → destination(s) (+ schedule)                            |
 | `transforms/*.py`             | `map` / `filter` / `batch` functions referenced as `module:function`         |
 | `templates/airflow/dag.py.j2` | optional DAG template override (`{% extends "cartage/airflow_dag.py.j2" %}`) |
-| `templates/dagster/dagster.py.j2`, `templates/prefect/prefect.py.j2` | optional overrides (`{% extends "cartage/dagster.py.j2" %}`) |
+| `templates/<target>/...`      | optional Dagster/Prefect overrides (`dagster.py.j2`, `prefect.py.j2`)        |
 | `.cartage/`                   | git-ignored: `secrets.yaml`, `state/`, `rejects/`                            |
 
 ## YAML configuration
@@ -136,8 +166,28 @@ schedule:
 ```
 
 Source and destination fields other than `connection` are adapter options. Transform functions live in your `transforms/`
-package; `with` passes keyword arguments to the function. The optional `schedule.airflow`, `schedule.dagster` and
-`schedule.prefect` blocks control generation with `cartage generate` (see [Orchestrators](#orchestrators)). Run `cartage validate` after editing YAML to check the project and references.
+package; `with` passes keyword arguments to the function, and `on_error: fail` stops the run on that step's first
+error instead of rejecting the record. The optional `schedule.airflow`, `schedule.dagster` and `schedule.prefect`
+blocks control generation with `cartage generate` (see [Orchestrators](#orchestrators)). Run `cartage validate` after
+editing YAML to check the project and references.
+
+#### Sources
+
+| Source       | Connection settings                                              | Pipeline options                                              |
+| ------------ | ---------------------------------------------------------------- | ------------------------------------------------------------- |
+| `filesystem` | `path`                                                           | `path` (glob), `format: csv`, `incremental`, `batch_size`     |
+| `s3`         | `bucket`, `prefix`, `region`, `endpoint_url`, access keys        | `path` (glob), `format: csv`, `incremental`, `batch_size`     |
+| `dlt`        | none: use `type: dlt` on the source                              | `ref` (`module:function`), `with`, `incremental`, `batch_size` |
+
+File sources with `incremental: true` skip files already processed. A dlt source's `ref` returns a dlt source or
+resource; `incremental: { cursor: updated_at, initial: "2024-01-01" }` adds a dlt cursor and needs `engine: dlt`.
+
+#### SAP destination
+
+`bapi` names the BAPI, `mapping` maps record fields to BAPI parameters (`HEADDATA.MATERIAL`, `TABLE[].FIELD`) and
+`constants` sets fixed values. `commit` is `per_record` (default), `per_batch` or `none`. `cartage validate` checks
+mapped parameters and fields against the bundled BAPI metadata; the mock SAP also rejects values that are too long,
+not allowed, or missing when required, as SAP would.
 
 #### dlt destinations
 
@@ -178,6 +228,31 @@ Without `transforms`, source batches reach dlt untouched, so Arrow/pandas batche
 pyarrow backend, ConnectorX) stay columnar. dlt fails whole load jobs, not single records: a failed load stops the
 run and state is not saved. Database-specific extraction (casts for Oracle LOBs and NUMBERs, MSSQL datetime2, Postgres
 enums and timestamptz, time zones) belongs in your dlt source factory, not in Cartage.
+
+Example: an incremental table copy from a database into Snowflake, kept columnar end to end.
+
+```python
+# sources/erp.py
+from dlt.sources.sql_database import sql_table
+
+def materials(credentials: str, schema: str):
+    return sql_table(credentials=credentials, schema=schema, table="materials", backend="pyarrow")
+```
+
+```yaml
+name: erp_materials
+source:
+  type: dlt
+  ref: sources.erp:materials
+  with: { credentials: "${secret:erp.url}", schema: ERP }
+  incremental: { cursor: updated_at, initial: "2024-01-01" }
+destination:
+  connection: warehouse
+  dataset_name: raw_erp
+  write_disposition: merge
+  primary_key: material
+engine: dlt
+```
 
 #### Multiple destinations
 
