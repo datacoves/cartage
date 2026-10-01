@@ -298,9 +298,66 @@ schedule:
 - **Prefect:** each file defines the `cartage_run` flow. `python orchestration/prefect/<name>.py` serves it on the
   schedule, or point `prefect deploy` at `orchestration/prefect/<name>.py:cartage_run`.
 - `env` defaults to `prd`; `command` (default `cartage`) may include a launcher, e.g. `uv run cartage`.
-- **Airflow:** `task_env` adds environment variables to the task (e.g. `UV_CACHE_DIR`); `${airflow:...}` references
-  in the pipeline's connections are added automatically (see [Secrets](#secrets)). `operator` can be any
+- **Airflow:** `task_env` adds environment variables to the task (e.g. `UV_CACHE_DIR`). `operator` can be any
   `BashOperator`-compatible class, e.g. `operators.datacoves.bash:DatacovesBashOperator`.
+
+### Airflow connections
+
+In Airflow, credentials usually live in Airflow connections. Cartage reads them with `${airflow:...}` references, so
+nothing has to copy them into variables by hand and they never appear in YAML or in the generated DAG.
+
+**1. Reference connection fields** in `connections.yaml`, in the environment the DAGs run (the `cartage_env` Airflow
+variable, `prd` by default):
+
+```yaml
+warehouse:
+  type: dlt
+  envs:
+    dev: { destination: snowflake, destination_name: datacoves_snowflake }   # ~/.dlt/secrets.toml locally
+    prd:
+      destination: snowflake
+      credentials:
+        host: "${airflow:main_load_keypair.extra.account}"
+        username: "${airflow:main_load_keypair.login}"
+        private_key: "${airflow:main_load_keypair.extra.private_key_content}"   # PEM, as stored
+        warehouse: "${airflow:main_load_keypair.extra.warehouse}"
+        role: "${airflow:main_load_keypair.extra.role}"
+```
+
+| Reference                          | Airflow connection field              |
+| ---------------------------------- | ------------------------------------- |
+| `${airflow:<conn_id>.login}`       | Login (also `password`, `host`, `schema`, `port`) |
+| `${airflow:<conn_id>.extra.<key>}` | a key of the Extra JSON; nest with dots (`extra.auth.token`) |
+
+**2. Generate the DAGs.** `cartage generate` collects every `${airflow:...}` used by the pipeline (its source,
+destinations, state store and options, in every environment) and passes them to the task as environment variables
+whose values are Airflow templates:
+
+```python
+BashOperator(
+    task_id="cartage_run",
+    bash_command="cartage --project-dir ... run pipelines/loans.yaml --env {{ var.value.get('cartage_env', 'prd') }}",
+    env={"CARTAGE_AIRFLOW__MAIN_LOAD_KEYPAIR__LOGIN": "{{ conn.get('main_load_keypair').login or '' }}", ...},
+    append_env=True,
+)
+```
+
+**3. Airflow fills them in when the task runs**, from wherever it keeps connections (metadata database, a secrets
+backend such as Vault or AWS Secrets Manager, or `AIRFLOW_CONN_<ID>` variables), and masks passwords in the task log.
+
+**4. `cartage run` resolves each reference** from its `CARTAGE_AIRFLOW__<CONN_ID>__<FIELD>` variable (dots and dashes
+become `__` and `_`). Values are never printed.
+
+Notes:
+
+- Rerun `cartage generate` when references change; `cartage generate --check` in CI catches stale DAGs.
+- A field that is empty in the connection resolves to `""`. A missing `extra` key fails the task when Airflow renders
+  it (Airflow's `StrictUndefined`), naming the key.
+- Outside Airflow, `cartage run`/`validate` stop at the first `${airflow:...}` with a hint naming the variable. Use
+  another environment locally (`${secret:...}`, `${env:...}` or the driver's own config), or export the variable.
+- To test a DAG without a real connection, define one inline:
+  `AIRFLOW_CONN_MAIN_LOAD_KEYPAIR='{"conn_type": "snowflake", "login": "...", "extra": {...}}' airflow dags test <dag_id>`.
+- Dagster and Prefect pass secrets to tasks as environment variables; read them with `${env:...}`.
 
 ## Batches
 
@@ -314,24 +371,8 @@ schedule:
 `${secret:sap.passwd}` reads `CARTAGE_SECRET__SAP__PASSWD`, then `.cartage/secrets.yaml`. `${env:VAR}` reads an
 environment variable. Resolved values are never printed.
 
-`${airflow:<conn_id>.<field>}` reads an Airflow connection: `host`, `login`, `password`, `schema`, `port`, or
-`extra.<key>` (nested keys with more dots). DAGs from `cartage generate` pass each field the pipeline uses to the task
-as `CARTAGE_AIRFLOW__<CONN_ID>__<FIELD>`, rendered by Airflow when the task runs (`{{ conn.get(...) }}`), so the
-values come from Airflow's connection store (metadata DB, secrets backend or `AIRFLOW_CONN_*`) and never sit in the DAG
-file. Outside Airflow these references fail with a hint: use them in the environment the DAGs run (e.g. `prd`).
-
-```yaml
-warehouse:
-  type: dlt
-  envs:
-    prd:
-      destination: snowflake
-      credentials:
-        host: "${airflow:main_load_keypair.extra.account}"
-        username: "${airflow:main_load_keypair.login}"
-        private_key: "${airflow:main_load_keypair.extra.private_key_content}"   # PEM as stored
-        warehouse: "${airflow:main_load_keypair.extra.warehouse}"
-```
+`${airflow:<conn_id>.<field>}` reads a field of an Airflow connection inside DAGs from `cartage generate`; see
+[Airflow connections](#airflow-connections).
 
 ## State and rejects
 
