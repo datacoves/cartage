@@ -100,6 +100,24 @@ def test_arrow_batches_pass_through_untouched_and_tuning_applies_only_to_the_run
     assert "SCHEMA__NAMING" not in os.environ and "DATA_WRITER__BUFFER_MAX_ITEMS" not in os.environ
 
 
+def test_project_naming_module_and_connection_level_tuning(project, tmp_path):
+    add_lakes(project, tmp_path, "lake")
+    connections = project / "connections.yaml"
+    connections.write_text(connections.read_text().replace(
+        f"bucket_url: file://{tmp_path / 'lake'} }}", f"bucket_url: file://{tmp_path / 'lake'}, naming: naming_upper }}"))
+    (project / "naming_upper.py").write_text(
+        "from dlt.common.normalizers.naming.sql_cs_v1 import NamingConvention as Base\n\n"
+        "class NamingConvention(Base):\n"
+        "    def normalize_identifier(self, identifier):\n"
+        "        return super().normalize_identifier(identifier).upper()\n")
+    pipeline(project, "upper", CSV_SOURCE + "destination:\n  connection: lake\n  table_name: materials\n")
+
+    result = cli(project, "run", "upper", "--json")
+
+    assert result.exit_code == 0, result.output
+    assert {"MATERIAL", "UOM"} <= set(rows(tmp_path / "lake", "UPPER", "MATERIALS")[0])
+
+
 def test_each_destination_is_its_own_run_with_its_own_state(project, tmp_path):
     add_lakes(project, tmp_path, "lake_a", "lake_b")
     pipeline(project, "fan", CSV_SOURCE + "destinations:\n"
