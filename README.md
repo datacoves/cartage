@@ -3,7 +3,7 @@
 Declarative data migrations. Describe sources, destinations and pipelines in YAML, put custom logic in plain
 Python, run locally to test, and generate thin Airflow DAGs for production.
 
-![Cartage terminal demo](docs/cartage-demo.gif)
+![Cartage terminal demo](https://raw.githubusercontent.com/datacoves/cartage/main/docs/cartage-demo.gif)
 
 - **Sources:** local CSV folders, S3, and any [dlt](https://dlthub.com) source.
 - **Destinations:** SAP via BAPIs (v0.1 ships a mock SAP; RFC is planned).

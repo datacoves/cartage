@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cartage"
-version = "0.1.1"
+version = "0.1.2"
 description = "Declarative data migrations: YAML pipelines, Python transforms, any engine, any orchestrator."
 readme = "README.md"
 license = "Apache-2.0"
