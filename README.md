@@ -6,7 +6,9 @@ Python, run locally to test, and generate thin Airflow DAGs for production.
 ![Cartage terminal demo](https://raw.githubusercontent.com/datacoves/cartage/main/docs/cartage-demo.gif)
 
 - **Sources:** local CSV folders, S3, and any [dlt](https://dlthub.com) source.
-- **Destinations:** SAP via BAPIs (v0.1 ships a mock SAP; RFC is planned) and any dlt destination.
+- **Destinations:** SAP via BAPIs (v0.1 ships a mock SAP; RFC is planned) and any
+  [dlt destination](https://dlthub.com/docs/dlt-ecosystem/destinations/) (filesystem/S3, DuckDB, Postgres, Snowflake,
+  BigQuery, ...), loaded natively by dlt. One pipeline can write to several destinations.
 - **Engines:** `python` (a plain loop) and `dlt`.
 - **Orchestrators:** Airflow. The DAG only calls `cartage run`, so local and production run the same code.
 
@@ -40,7 +42,7 @@ in `connections.yaml`, and run the pipeline in another terminal.
 ## YAML configuration
 
 Cartage uses three YAML layers: `cartage.yaml` sets project-wide defaults, `connections.yaml` defines named services
-per environment, and each `pipelines/*.yaml` file describes one source-to-destination flow (or fan-out).
+per environment, and each `pipelines/*.yaml` file describes one flow from a source to one or more destinations.
 
 ### `cartage.yaml`
 
@@ -94,7 +96,8 @@ then `.cartage/secrets.yaml`. `${env:NAME}` reads an environment variable direct
 
 ### `pipelines/*.yaml`
 
-Each pipeline names a source connection, applies an ordered list of transforms, and writes to a destination. A step
+Each pipeline names a source connection, applies an ordered list of transforms, and writes to a destination (or a
+list of `destinations`, see [Multiple destinations](#multiple-destinations)). A step
 must have exactly one of `map`, `filter`, or `batch`; each reference uses the `module:function` format.
 
 ```yaml
@@ -188,6 +191,8 @@ destinations:
 
 - `batch` transforms see one source batch at a time (default 100 rows, `batch_size` source option), never across files.
 - `commit: per_batch` commits each batch the engine hands to the destination (the dlt engine re-chunks at 100).
+- dlt destinations are not fed in batches: dlt extracts, normalizes and loads the whole run. Size its files and
+  buffers with `dlt_config` (e.g. `data_writer.buffer_max_items`, `data_writer.file_max_items`).
 
 ## Secrets
 
@@ -199,14 +204,28 @@ environment variable. Resolved values are never printed.
 Incremental state is saved only when a run has no record errors (or with `--advance-state`). Rejected records
 go to `.cartage/rejects/<pipeline>/<run_id>.jsonl`. `cartage state show|reset <pipeline>` inspects or clears state.
 
+With several destinations, each destination is its own run named `<pipeline>__<connection>`: state, rejects and the
+dlt pipeline are kept per destination, and `state show|reset` covers all of them. `cartage run` goes through the
+destinations in order and stops at the first fatal error; destinations that already finished keep their state, so a
+rerun only retries the rest. With `--json`, `run` prints one result line per destination and `plan` prints a list.
+
+Cartage's state store is the source of truth for dlt state: dlt's restore-from-destination is disabled, so
+`--full-refresh` really starts from scratch.
+
 ## Exit codes
 
-`0` ok · `1` record errors · `2` configuration error · `3` fatal run error (connection, transport, `on_error: fail`).
+`0` ok · `1` record errors · `2` configuration error · `3` fatal run error (connection, transport, failed dlt load,
+`on_error: fail`).
 
 ## Extending
 
 Adapters are entry points in the groups `cartage.sources`, `cartage.destinations`, `cartage.engines` and
 `cartage.orchestrators`. `cartage plugins` lists what is installed.
+
+A destination is a record sink (`preview` + `write`, like SAP) by default. To have the dlt engine load into it natively
+instead, expose `dlt_destination()` returning a dlt destination, plus `hints` (resource hints such as
+`write_disposition`), `dataset_name`, `loader_file_format` and `dlt_env` (env vars applied to the run), as the
+built-in `dlt` destination does.
 
 ## License
 
