@@ -19,10 +19,10 @@ def test_partial_string_and_non_strings(tmp_path):
 
 def test_secret_env_var_wins_over_file(tmp_path):
     (tmp_path / ".cartage").mkdir()
-    (tmp_path / ".cartage" / "secrets.yaml").write_text("sap:\n  user: file_user\n  passwd: file_pw\n")
+    (tmp_path / ".cartage" / "secrets.yaml").write_text("sap:\n  user: file_user\n  passwd: file_pw\n")  # ggignore (fake test value)
     s = Secrets(tmp_path, environ={"CARTAGE_SECRET__SAP__USER": "env_user"})
     assert s.resolve("${secret:sap.user}", "x") == "env_user"
-    assert s.resolve("${secret:sap.passwd}", "x") == "file_pw"
+    assert s.resolve("${secret:sap.passwd}", "x") == "file_pw"  # ggignore (fake test value)
 
 
 def test_missing_secret_names_reference_location_and_env_var(tmp_path):
@@ -44,16 +44,16 @@ def test_mask_scrubs_revealed_values(tmp_path):
 
 
 def test_error_panel_masks_secret_values(tmp_path):
-    Secrets(tmp_path, environ={"CARTAGE_SECRET__SAP__PASSWD": "hunter2hunter2"}).resolve("${secret:sap.passwd}", "x")
+    Secrets(tmp_path, environ={"CARTAGE_SECRET__SAP__PASSWD": "hunter2hunter2"}).resolve("${secret:sap.passwd}", "x")  # ggignore (fake test value)
     t = typer.Typer()
 
     @t.command()
     def boom():
         with ui.handle_errors():
-            raise CartageError("RFC logon failed with password hunter2hunter2")
+            raise CartageError("RFC logon failed with password hunter2hunter2")  # ggignore (fake test value)
 
     result = CliRunner().invoke(t)
-    assert "hunter2hunter2" not in result.output
+    assert "hunter2hunter2" not in result.output  # ggignore (fake test value)
     assert "****" in result.output
 
 
@@ -87,13 +87,13 @@ def test_non_mapping_top_level_in_secrets_file(tmp_path):
 
 
 def test_debug_traceback_masks_secret_values(tmp_path):
-    Secrets(tmp_path, environ={"CARTAGE_SECRET__SAP__PASSWD": "hunter3hunter3"}).resolve("${secret:sap.passwd}", "x")
+    Secrets(tmp_path, environ={"CARTAGE_SECRET__SAP__PASSWD": "hunter3hunter3"}).resolve("${secret:sap.passwd}", "x")  # ggignore (fake test value)
     t = typer.Typer()
 
     @t.command()
     def boom():
         with ui.handle_errors(debug=True):
-            raise CartageError("RFC logon failed with password hunter3hunter3")
+            raise CartageError("RFC logon failed with password hunter3hunter3")  # ggignore (fake test value)
 
     result = CliRunner().invoke(t)
-    assert "Traceback" in result.output and "hunter3hunter3" not in result.output
+    assert "Traceback" in result.output and "hunter3hunter3" not in result.output  # ggignore (fake test value)
