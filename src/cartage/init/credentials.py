@@ -54,7 +54,7 @@ def variants(destination: str) -> list[str]:
     """The auth variants a dlt destination offers; one or none means there is nothing to ask."""
     try:
         return [label(c) for c in _classes(destination)]
-    except Exception:
+    except Exception:  # noqa: BLE001 - any dlt internals change means "no variants"
         return []
 
 
@@ -93,5 +93,5 @@ def credentials(destination: str, variant: str | None = None, url: str | None = 
         if not classes:
             raise LookupError(variant or url)
         return Credentials(_fields(classes[0]), docs=docs)
-    except Exception:
+    except Exception:  # noqa: BLE001 - any dlt internals change falls back to one secret
         return Credentials((), fallback=True, docs=docs)
