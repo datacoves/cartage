@@ -43,7 +43,7 @@ def test_validate_reports_bad_transform(project):
 def test_validate_prd_needs_secrets(project):
     result = cli(project, "validate", "--env", "prd")
     assert result.exit_code == 2
-    assert 'is still "<fill me>"' in result.output
+    assert 'still "<fill me>"' in result.output
 
 
 def test_plan_json_previews_payloads_without_state(project):
@@ -116,3 +116,10 @@ def test_plan_pairs_each_record_with_its_own_output_when_steps_filter(project):
     assert data["payloads"][1]["HEADDATA"]["MATERIAL"] == "100002"
     text = cli(project, "plan", "materials", "--engine", "python").output
     assert "transformed: none (filtered out)" in text
+
+
+def test_validate_lists_every_placeholder(project):
+    result = cli(project, "validate", "--env", "prd")
+    assert result.exit_code == 2
+    for key in ("ashost", "sysnr", "client", "sap.prd.user", "sap.prd.passwd"):
+        assert key in result.output, key

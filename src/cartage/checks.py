@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from cartage.config import Project
 from cartage.core import CartageError
 from cartage.runner import prepare_all
-from cartage.secrets import mask
+from cartage.secrets import FILL_ME, REF, Secrets, mask
 from cartage.transforms import load_steps
 
 
@@ -19,6 +19,37 @@ class Check:
 
 def _failed(label: str, error: CartageError) -> Check:
     return Check(label, False, mask(error.message + (f" (hint: {error.hint})" if error.hint else "")))
+
+
+def unfilled(project: Project, pipeline, env: str) -> list[str]:
+    """Every "<fill me>" a run in `env` would hit: its connections' settings, the pipeline's options, and the secrets
+    they reference. A run stops at the first; validate lists them all."""
+    secrets, found = Secrets(project.root, env=env), []
+
+    def walk(value, where: str) -> None:
+        if isinstance(value, dict):
+            for key, item in value.items():
+                walk(item, f"{where}.{key}")
+        elif isinstance(value, list):
+            for i, item in enumerate(value):
+                walk(item, f"{where}[{i}]")
+        elif isinstance(value, str):
+            if value == FILL_ME:
+                found.append(where)
+            for kind, key in REF.findall(value):
+                key = key.replace("{env}", env)
+                if kind == "secret" and secrets.peek(key) == FILL_ME:
+                    found.append(f"{key} (secret)")
+
+    spec = pipeline.source_for(env)
+    for name in sorted({spec.connection, *(d.connection for d in pipeline.destination_specs)} - {None}):
+        conn = project.connections.get(name)
+        if conn is not None and env in conn.envs:
+            walk(conn.envs[env], f"{name}.{env}")
+    walk(spec.options(), "source")
+    for d in pipeline.destination_specs:
+        walk(d.options(), f"destination {d.key}")
+    return found
 
 
 def check_pipeline(project: Project, ref: str, env: str | None) -> tuple[str, list[Check]]:
@@ -35,6 +66,13 @@ def check_pipeline(project: Project, ref: str, env: str | None) -> tuple[str, li
         checks.append(Check("transforms", True, f"{len(load_steps(pipeline.transforms, project.root))} step(s)"))
     except CartageError as e:
         return pipeline.name, [*checks, _failed("transforms", e)]
+    try:
+        missing = unfilled(project, pipeline, project.resolve_env(env))
+    except CartageError as e:
+        return pipeline.name, [*checks, _failed("placeholders", e)]
+    if missing:
+        return pipeline.name, [*checks, Check("placeholders", False,
+                                              f'{len(missing)} still "{FILL_ME}": {", ".join(missing)}')]
     try:
         preps = prepare_all(project, str(pipeline.path), env)
         checks.append(Check("connections, secrets and adapters", True,

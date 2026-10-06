@@ -164,7 +164,10 @@ def load_answers(ref: str | None) -> tuple[InitAnswers, set[str], Origin]:
     if ref is None:
         return InitAnswers(), set(), Origin.cwd()
     origin = Origin(ref if _is_url(ref) else str(Path(ref).resolve()))
-    text = origin.read(origin.base).decode("utf-8")
+    try:
+        text = origin.read(origin.base).decode("utf-8")
+    except UnicodeDecodeError as e:
+        raise CartageError(f"{ref} is not UTF-8 text ({e.reason} at byte {e.start})") from e
     try:
         raw = YAML(typ="rt").load(text)
     except YAMLError as e:

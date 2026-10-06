@@ -66,3 +66,10 @@ def test_an_existing_file_is_refused_before_any_question(tmp_path):
     (tmp_path / ".gitignore").write_text("mine\n")
     result = init(str(tmp_path), input="")  # no answers: a question would fail differently
     assert result.exit_code == 2 and ".gitignore" in result.output
+
+
+def test_a_file_in_the_way_of_a_folder_is_refused_and_nothing_is_written(tmp_path):
+    (tmp_path / "transforms").write_text("not a folder\n")
+    result = init(str(tmp_path), "--yes")
+    assert result.exit_code == 2 and "transforms" in result.output
+    assert not (tmp_path / "cartage.yaml").exists()

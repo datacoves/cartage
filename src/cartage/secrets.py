@@ -85,6 +85,16 @@ class Secrets:
                 self._file = {}
         return self._file
 
+    def peek(self, key: str) -> Any:
+        """A secret's raw value (environment variable, then the secrets file), or None. Never raises on placeholders."""
+        value = self.environ.get(env_key(key))
+        if value is not None:
+            return value
+        node: Any = self._file_values()
+        for part in key.split("."):
+            node = node.get(part) if isinstance(node, dict) else None
+        return node
+
     def lookup(self, kind: str, key: str, where: str) -> str:
         if "{env}" in key:
             if self.env is None:

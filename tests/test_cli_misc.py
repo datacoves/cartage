@@ -59,3 +59,11 @@ def test_connections_test_masks_secrets(project, monkeypatch):
     result = cli(project, "connections", "test", "sap", "--env", "prd")
     assert result.exit_code == 0, result.output
     assert "logged in as ****" in result.output and "realuser1" not in result.output
+
+
+def test_a_missing_source_folder_fails_connections_test(project):
+    import shutil
+
+    shutil.rmtree(project / "data" / "sample")
+    result = cli(project, "connections", "test", "samples")
+    assert result.exit_code == 3 and "Not found" in result.output

@@ -111,6 +111,14 @@ class FilesystemSource(DltSourceAdapter):
         return f"{bucket_url(config, root)} ({count} entr{'ies' if count != 1 else 'y'})"
 
     @classmethod
+    def check_source(cls, config: dict, root: Path) -> str:
+        """check_connection for a connection pipelines read from: a missing location is an error, not a future one."""
+        fs, base = fsspec(config, root)
+        if not fs.exists(base):
+            raise FatalRunError(f"Not found: {bucket_url(config, root)}", hint="Check the connection's bucket_url")
+        return cls.check_connection(config, root)
+
+    @classmethod
     def state_backend(cls, config: dict, prefix: str, root: Path) -> FsspecStateBackend:
         fs, base = fsspec(config, root)
         return FsspecStateBackend(fs, f"{base}/{prefix}" if prefix else base)

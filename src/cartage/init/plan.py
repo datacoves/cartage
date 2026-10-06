@@ -130,6 +130,8 @@ def _connections(a: InitAnswers, first: str, real: list[str], secrets: _Secrets)
         envs = {e: [f"bucket_url: {_scalar(a.files.location)}",
                     *credential_lines(credentials("filesystem", url=a.files.location), "landing", e, secrets)]
                 for e in real}
+        if not real:
+            lines.append("  # no environment reads the real files yet: add an environment here, e.g. prd: {bucket_url: s3://...}")
         lines += _connection("landing", "filesystem", envs)
     d, name = a.destination, destination_connection_name(a.destination)
     envs: dict[str, str | list[str]] = {}

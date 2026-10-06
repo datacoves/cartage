@@ -98,3 +98,9 @@ def test_absolute_paths_in_a_remote_answers_file_never_read_the_local_disk():
     origin = Origin("https://example.com/x/answers.yaml")
     assert origin.resolve("/etc/passwd") == "https://example.com/etc/passwd"
     assert origin.resolve("../m.csv") == "https://example.com/m.csv"
+
+
+def test_non_utf8_answers_are_a_clear_error(tmp_path):
+    (tmp_path / "a.yaml").write_bytes(b"project: caf\xe9\n")
+    with pytest.raises(CartageError, match="not UTF-8"):
+        load_answers(str(tmp_path / "a.yaml"))

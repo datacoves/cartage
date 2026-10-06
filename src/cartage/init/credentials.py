@@ -33,8 +33,9 @@ class Credentials:
         to choose from (fill one). A local database such as DuckDB has none."""
         if any(f.secret and f.required for f in self.fields) or not any(f.required for f in self.fields):
             return ()
-        names = tuple(f.name for f in self.fields if f.secret and not f.required)
-        return names if len(names) > 1 else ()
+        names = [f.name for f in self.fields if f.secret and not f.required]
+        methods = tuple(n for n in names if not any(n.startswith(f"{m}_") for m in names))  # private_key_passphrase
+        return methods if len(methods) > 1 else ()                                         # goes with private_key
 
 
 def _classes(destination: str) -> list[type]:
@@ -54,7 +55,7 @@ def label(cls: type) -> str:
 def variants(destination: str) -> list[str]:
     """The auth variants a dlt destination offers; one or none means there is nothing to ask."""
     try:
-        return [label(c) for c in _classes(destination)]
+        return list(dict.fromkeys(label(c) for c in _classes(destination)))  # Azure has two classes per label
     except Exception:  # noqa: BLE001 - any dlt internals change means "no variants"
         return []
 
@@ -80,7 +81,7 @@ def _fields(cls: type) -> tuple[CredentialField, ...]:
 
 
 def credentials(destination: str, variant: str | None = None, url: str | None = None) -> Credentials:
-    docs = f"https://dlthub.com/docs/dlt-ecosystem/destinations/{destination}"
+    docs = "https://dlthub.com/docs/dlt-ecosystem/destinations/" + ("" if ":" in destination else destination)
     try:
         classes = _classes(destination)
         if destination == "filesystem":

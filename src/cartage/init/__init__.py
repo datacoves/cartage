@@ -25,7 +25,18 @@ def write_project(dest: Path, files: dict[str, bytes]) -> list[Path]:
     dest = Path(dest)
     refuse_existing(dest, list(files))
     targets = [dest / path for path in files]
-    for target, content in zip(targets, files.values(), strict=True):
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(content)
+    blocking = sorted({str(p) for t in targets for p in t.relative_to(dest).parents
+                       if p != Path(".") and (dest / p).exists() and not (dest / p).is_dir()})
+    if blocking:
+        raise CartageError(f"Files are in the way of folders init needs: {', '.join(blocking)}", hint="Choose an empty folder")
+    written: list[Path] = []
+    try:
+        for target, content in zip(targets, files.values(), strict=True):
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
+            written.append(target)
+    except OSError as e:
+        for path in written:  # all or nothing
+            path.unlink(missing_ok=True)
+        raise CartageError(f"Cannot write {target}: {e}", hint="Nothing was kept; fix the folder and run init again") from e
     return targets

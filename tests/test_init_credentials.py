@@ -49,3 +49,17 @@ def test_introspection_failure_falls_back(monkeypatch):
 def test_local_databases_have_no_auth_alternatives():
     c = creds.credentials("duckdb")
     assert names(c, required=True) == [] and c.alternatives == ()
+
+
+def test_factory_destinations_link_the_destinations_index():
+    assert creds.credentials("sources.lake:factory").docs == "https://dlthub.com/docs/dlt-ecosystem/destinations/"
+
+
+def test_variant_labels_are_unique():
+    labels = creds.variants("filesystem")
+    assert len(labels) == len(set(labels))
+
+
+def test_companion_secrets_are_not_auth_alternatives():
+    alternatives = creds.credentials("snowflake").alternatives
+    assert "private_key" in alternatives and "private_key_passphrase" not in alternatives

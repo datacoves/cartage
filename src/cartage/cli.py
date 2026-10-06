@@ -13,7 +13,7 @@ from cartage import __version__, registry, ui
 from cartage.adapters.destinations.sap.transports.mock import make_server
 from cartage.checks import check_pipeline
 from cartage.config import load_project
-from cartage.core import FatalRunError
+from cartage.core import CartageError, FatalRunError
 from cartage.init import refuse_existing, write_project
 from cartage.init.answers import Origin, fetch_files, load_answers
 from cartage.init.plan import placeholders, plan_project
@@ -191,8 +191,21 @@ def connections_test(name: str = typer.Argument(..., help="Connection name."), e
         cls = registry.connection_class(ctype)
         if not hasattr(cls, "state_backend"):  # destination adapters: dlt destinations get their type as settings
             config = registry.destination_config(ctype, config)
-        message = cls.check_connection(config, project.root)
+        check = cls.check_connection
+        if hasattr(cls, "check_source") and _read_by_a_pipeline(project, name, env):
+            check = cls.check_source
+        message = check(config, project.root)
     ui.console.print(ui.Text.assemble(("✔ ", "green"), (name, "bold"), f" ({ctype}, {env}): ", mask(message)))
+
+
+def _read_by_a_pipeline(project, name: str, env: str) -> bool:
+    for path in project.pipeline_files():
+        try:
+            if project.load_pipeline(path).source_for(env).connection == name:
+                return True
+        except CartageError:
+            continue
+    return False
 
 
 def _stores(pipeline: str, env: str | None) -> tuple[dict[str, StateStore], str, str]:

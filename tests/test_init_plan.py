@@ -155,3 +155,9 @@ def test_csv_samples_are_read_as_text_by_default(tmp_path, monkeypatch):
     result = cli(root, "run", answers.pipeline_name, "--json")
     assert result.exit_code == 0, result.output
     assert '"000123"' in (root / "output" / f"{answers.pipeline_name}.jsonl").read_text()
+
+
+def test_single_environment_explains_the_unused_source_connection(tmp_path):
+    _, files = write(tmp_path, InitAnswers(project="p", environments=["dev"], sample_data="s.csv"),
+                     {"data/sample/s.csv": SAMPLE})
+    assert "add an environment" in files["connections.yaml"].decode()
