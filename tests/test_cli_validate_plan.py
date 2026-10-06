@@ -14,7 +14,7 @@ def cli(project, *args):
 def test_validate_demo_ok(project):
     result = cli(project, "validate")
     assert result.exit_code == 0, result.output
-    assert "✔ materials_to_sap" in result.output
+    assert "✔ materials" in result.output
     assert "3 step(s)" in result.output
 
 
@@ -43,7 +43,7 @@ def test_validate_reports_bad_transform(project):
 def test_validate_prd_needs_secrets(project):
     result = cli(project, "validate", "--env", "prd")
     assert result.exit_code == 2
-    assert "Secret 'sap.user' not found" in result.output
+    assert 'is still "<fill me>"' in result.output
 
 
 def test_plan_json_previews_payloads_without_state(project):
@@ -55,7 +55,7 @@ def test_plan_json_previews_payloads_without_state(project):
     assert data["payloads"][0]["HEADDATA"]["MATERIAL"] == "100001"
     assert data["payloads"][0]["CLIENTDATAX"] == {"BASE_UOM": "X"}
     assert data["destination"]["config"] == {"transport": "mock", "client": "100"}
-    assert not (project / ".cartage").exists()
+    assert not (project / ".cartage" / "state").exists()
 
 
 def test_plan_rich_output(project):
@@ -87,8 +87,8 @@ def test_plan_never_prints_resolved_secrets(project, monkeypatch):
     conn = project / "connections.yaml"
     conn.write_text(
         conn.read_text().replace(
-            'dev: { transport: mock, client: "100" }',
-            'dev: { transport: mock, client: "${secret:sap.client}" }',
+            'dev: {transport: mock, client: "100"}',
+            'dev: {transport: mock, client: "${secret:sap.client}"}',
         )
     )
     monkeypatch.setenv("CARTAGE_SECRET__SAP__CLIENT", "hunter2client")
@@ -102,12 +102,12 @@ def test_plan_never_prints_resolved_secrets(project, monkeypatch):
 
 
 def test_plan_pairs_each_record_with_its_own_output_when_steps_filter(project):
-    (project / "data/materials/materials.csv").write_text(
+    (project / "data/sample/materials.csv").write_text(
         "material,industry,type,description,uom,status\n"
         "100001,M,FERT,Old pump,EA,obsolete\n"
         "100002,M,ROH,Steel,KGS,active\n")
     pipeline = project / "pipelines/materials.yaml"
-    pipeline.write_text(pipeline.read_text().replace("  - batch: transforms.materials:dedupe\n    with: { key: material }\n", ""))
+    pipeline.write_text(pipeline.read_text().replace("  - batch: transforms.materials:dedupe\n    with:\n      key: material\n", ""))
 
     data = json.loads(cli(project, "plan", "materials", "--engine", "python", "--json").stdout)
 

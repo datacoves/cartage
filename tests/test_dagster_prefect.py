@@ -9,7 +9,7 @@ from typer.testing import CliRunner
 from cartage.cli import app
 
 runner = CliRunner()
-FILES = {"dagster": "orchestration/dagster/materials_to_sap.py", "prefect": "orchestration/prefect/materials_to_sap.py"}
+FILES = {"dagster": "orchestration/dagster/materials.py", "prefect": "orchestration/prefect/materials.py"}
 CLEAN_CSV = "material,industry,type,description,uom,status\n100001,M,FERT,Pump housing,EA,active\n"
 # Runs the cartage under test, whatever environment the orchestrator runtime is in.
 CARTAGE = shlex.join([sys.executable, "-c", "from cartage.cli import app; app()"])
@@ -48,8 +48,8 @@ def test_generates_thin_file_calling_cartage_run(project, target):
 def test_dagster_specifics(project):
     schedule(project, "dagster", "    tags: { team: data }\n    timezone: Europe/Brussels\n")
     content = generate(project, "dagster")
-    assert "@dg.op(name='materials_to_sap_cartage_run')" in content
-    assert "@dg.job(name='materials_to_sap', tags={'cartage': 'true', 'team': 'data'})" in content
+    assert "@dg.op(name='materials_cartage_run')" in content
+    assert "@dg.job(name='materials', tags={'cartage': 'true', 'team': 'data'})" in content
     assert "execution_timezone='Europe/Brussels'" in content
 
 
@@ -87,11 +87,11 @@ def test_project_template_override(project):
     (project / "templates/prefect").mkdir(parents=True)
     (project / "templates/prefect/prefect.py.j2").write_text(
         '{% extends "cartage/prefect.py.j2" %}\n{% block extra %}\n# custom footer for {{ name }}\n{% endblock %}\n')
-    assert generate(project, "prefect").rstrip().endswith("# custom footer for materials_to_sap")
+    assert generate(project, "prefect").rstrip().endswith("# custom footer for materials")
 
 
 def _run_ready(project, target, monkeypatch):
-    (project / "data/materials/materials.csv").write_text(CLEAN_CSV)
+    (project / "data/sample/materials.csv").write_text(CLEAN_CSV)
     schedule(project, target, f"    env: dev\n    command: {json.dumps(CARTAGE)}\n")  # JSON string = YAML string
     generate(project, target)
     monkeypatch.delenv("CARTAGE_ENV", raising=False)
@@ -102,11 +102,11 @@ def test_generated_dagster_job_runs_cartage(project, monkeypatch):
     pytest.importorskip("dagster")
     module = _run_ready(project, "dagster", monkeypatch)
     assert module["job"].execute_in_process().success
-    assert (project / ".cartage/state/materials_to_sap/dev/state.json").is_file()
+    assert (project / ".cartage/state/materials/dev/state.json").is_file()
 
 
 def test_generated_prefect_flow_runs_cartage(project, monkeypatch):
     pytest.importorskip("prefect")
     module = _run_ready(project, "prefect", monkeypatch)
     module["cartage_run"]()
-    assert (project / ".cartage/state/materials_to_sap/dev/state.json").is_file()
+    assert (project / ".cartage/state/materials/dev/state.json").is_file()

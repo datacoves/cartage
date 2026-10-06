@@ -1,20 +1,24 @@
 import os
+from pathlib import Path
 
 import pytest
+from typer.testing import CliRunner
 
-from cartage.scaffold import init_project
+from cartage.cli import app
 
 # Rich reads COLUMNS when the console is created; keep test output on one line per row.
 os.environ.setdefault("COLUMNS", "200")
 
-INCREMENTAL = "  incremental: true          # only files changed since the last run\n"
+EXAMPLE = Path(__file__).resolve().parents[1] / "examples" / "sap" / "answers.yaml"
+INCREMENTAL = "      incremental: true\n"
 
 
 @pytest.fixture
 def project(tmp_path):
-    """The `cartage init` demo, without incremental reads so it runs on both engines; see incremental()."""
+    """The SAP example from `cartage init --answers`, without incremental reads so it runs on both engines."""
     root = tmp_path / "demo"
-    init_project(root)
+    result = CliRunner().invoke(app, ["init", str(root), "--answers", str(EXAMPLE), "--yes"])
+    assert result.exit_code == 0, result.output
     pipeline = root / "pipelines/materials.yaml"
     assert INCREMENTAL in pipeline.read_text()
     pipeline.write_text(pipeline.read_text().replace(INCREMENTAL, ""))
@@ -22,7 +26,8 @@ def project(tmp_path):
 
 
 def incremental(project):
-    """Turn the demo's incremental file reads back on (dlt engine only)."""
+    """Turn the example's incremental sample reads back on (dlt engine only)."""
     pipeline = project / "pipelines/materials.yaml"
-    pipeline.write_text(pipeline.read_text().replace("  path: materials/*.csv\n", "  path: materials/*.csv\n" + INCREMENTAL))
+    pipeline.write_text(pipeline.read_text().replace(
+        "      path: materials.csv\n", "      path: materials.csv\n" + INCREMENTAL))
     return project

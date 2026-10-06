@@ -78,12 +78,12 @@ def run(project, *args):
 def test_incremental_reads_only_changed_files_with_state_on_a_filesystem_connection(project):
     incremental(project)
     settings = project / "cartage.yaml"
-    settings.write_text(settings.read_text().replace("dev: { path: .cartage/state }",
-                                                     "dev: { connection: local_files, prefix: state }"))
+    settings.write_text(settings.read_text().replace("dev: {path: .cartage/state}",
+                                                     "dev: {connection: samples, prefix: state}"))
     assert json.loads(run(project).stdout)["read"] == 20
-    assert (project / "data/state/materials_to_sap/dev/state.json").is_file()
+    assert (project / "data/sample/state/materials/dev/state.json").is_file()
     assert json.loads(run(project).stdout)["read"] == 0
-    f = project / "data/materials/materials.csv"
+    f = project / "data/sample/materials.csv"
     os.utime(f, ns=(f.stat().st_atime_ns, f.stat().st_mtime_ns + 5_000_000_000))
     assert json.loads(run(project).stdout)["read"] == 20  # a changed file is read again, in full
 

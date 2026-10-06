@@ -41,12 +41,12 @@ def test_state_archive_keeps_no_loaded_data(project):
     from cartage.cli import app
 
     incremental(project)
-    (project / "data/materials/materials.csv").write_text(CLEAN_CSV)
+    (project / "data/sample/materials.csv").write_text(CLEAN_CSV)
     run = lambda: CliRunner().invoke(app, ["-C", str(project), "run", "materials", "--engine", "dlt", "--json"])
     first = run()
     assert first.exit_code == 0, first.output
     second = run()
     assert second.exit_code == 0 and json.loads(second.stdout)["read"] == 0
-    with tarfile.open(project / ".cartage/state/materials_to_sap/dev/dlt.tar.gz") as tar:
+    with tarfile.open(project / ".cartage/state/materials/dev/dlt.tar.gz") as tar:
         names = tar.getnames()
     assert names and not [n for n in names if "completed_jobs" in n or "/load/loaded" in n or n.endswith("trace.pickle")], names

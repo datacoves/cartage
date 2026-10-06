@@ -7,7 +7,7 @@ from cartage.config import load_project
 from cartage.core import CartageError, FatalRunError, RecordError, RunResult
 from cartage.runner import prepare, run_pipeline
 
-STATE = ".cartage/state/materials_to_sap/dev/state.json"
+STATE = ".cartage/state/materials/dev/state.json"
 
 
 def run(project, **kwargs):
@@ -48,7 +48,7 @@ def test_unknown_engine(project):
 
 def test_state_connection_must_support_state(project):
     (project / "cartage.yaml").write_text((project / "cartage.yaml").read_text().replace(
-        "dev: { path: .cartage/state }", "dev: { connection: sap_erp }"))
+        "dev: {path: .cartage/state}", "dev: { connection: sap }"))
     with pytest.raises(CartageError, match="cannot store state"):
         prepare(load_project(project), "materials", engine="python")
 

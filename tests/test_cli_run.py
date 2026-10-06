@@ -29,7 +29,7 @@ def test_incremental_flow(project):  # incremental file reads need the dlt engin
     assert json.loads(run(project, "--engine", engine, "--json", "--advance-state").stdout)["state_advanced"]
     second = run(project, "--engine", engine, "--json")
     assert second.exit_code == 0 and json.loads(second.stdout)["read"] == 0
-    with open(project / "data/materials/materials.csv", "a") as f:
+    with open(project / "data/sample/materials.csv", "a") as f:
         f.write("100020,M,FERT,New pump,EA,active\n")
     assert json.loads(run(project, "--engine", engine, "--json").stdout)["read"] == 21
 
@@ -46,7 +46,7 @@ def test_rich_summary(project, engine):
 @pytest.mark.parametrize("engine", ENGINES)
 def test_no_matching_files(project, engine):
     pipeline = project / "pipelines/materials.yaml"
-    pipeline.write_text(pipeline.read_text().replace("path: materials/*.csv", "path: nothing/*.csv"))
+    pipeline.write_text(pipeline.read_text().replace("      path: materials.csv\n", "      path: nothing.csv\n"))
     result = run(project, "--engine", engine)
     assert result.exit_code == 0, result.output
     assert "No records to process." in result.output
@@ -71,7 +71,7 @@ def test_unreachable_mock_server_exits_3(project, engine):
     result = run(project, "--engine", engine)
     assert result.exit_code == 3, result.output
     assert "Cannot reach mock SAP" in result.output
-    assert "materials_to_sap · dev" in result.output and "run aborted" in result.output  # partial summary
+    assert "materials · dev" in result.output and "run aborted" in result.output  # partial summary
     data = json.loads(run(project, "--engine", engine, "--json").stdout)
     assert data["read"] == 20 and data["ok"] == 0 and "Cannot reach mock SAP" in data["fatal"]
 
@@ -79,7 +79,7 @@ def test_unreachable_mock_server_exits_3(project, engine):
 def test_unexpected_engine_error_exits_3_without_traceback(project):
     (project / "boom_src.py").write_text("import dlt\n\n\n@dlt.resource\ndef rows():\n    raise RuntimeError('kaboom')\n    yield\n")
     pipeline = project / "pipelines/materials.yaml"
-    pipeline.write_text(pipeline.read_text().replace("  connection: local_files\n", "  ref: boom_src:rows\n"))
+    pipeline.write_text(pipeline.read_text().replace("      connection: samples\n      path: materials.csv\n", "      ref: boom_src:rows\n"))
     result = run(project, "--engine", "python")
     assert result.exit_code == 3, result.output
     assert "Run failed:" in result.output and "kaboom" in result.output and "Traceback" not in result.output

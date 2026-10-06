@@ -1,0 +1,32 @@
+# Cartage example: legacy materials CSVs → transforms → SAP via BAPI_MATERIAL_SAVEDATA.
+#   cartage init demo --answers https://raw.githubusercontent.com/datacoves/cartage/main/examples/sap/answers.yaml --yes
+# dev runs on the sample file and the mock SAP; prd reads S3 and calls SAP over RFC (fill .cartage/secrets.yaml).
+project: demo
+environments: [dev, prd]
+source: files
+files: {location: "s3://my-bucket/materials", path: "materials/*.csv", format: csv}
+destination: sap_bapi
+pipeline: materials
+sample_data:
+  path: materials.csv
+  reader_options: {dtype: str, keep_default_na: false}   # keep codes such as 000123 as text, empty cells as ""
+  incremental: true
+transforms:
+  - map: transforms.materials:normalize_uom
+  - filter: transforms.materials:is_active
+  - batch: transforms.materials:dedupe
+    with: {key: material}
+destination_options:
+  bapi: BAPI_MATERIAL_SAVEDATA
+  mapping:
+    HEADDATA.MATERIAL: material
+    HEADDATA.IND_SECTOR: industry
+    HEADDATA.MATL_TYPE: type
+    MATERIALDESCRIPTION[].MATL_DESC: description
+    CLIENTDATA.BASE_UOM: uom
+  constants:
+    MATERIALDESCRIPTION[].LANGU_ISO: EN
+    HEADDATA.BASIC_VIEW: X
+  commit: per_record
+copy: [transforms/materials.py]
+schedule: {target: airflow, cron: "0 3 * * *"}

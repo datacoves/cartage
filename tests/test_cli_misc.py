@@ -12,21 +12,21 @@ def cli(project, *args):
 
 
 def test_connections_list_shows_references_not_values(project, monkeypatch):
-    monkeypatch.setenv("CARTAGE_SECRET__SAP__USER", "realuser")
+    monkeypatch.setenv("CARTAGE_SECRET__SAP__PRD__USER", "realuser")
     result = cli(project, "connections", "list")
     assert result.exit_code == 0
-    assert "sap_erp" in result.output and "local_files" in result.output
-    assert "${secret:sap.user}" in result.output and "realuser" not in result.output
+    assert "sap" in result.output and "samples" in result.output
+    assert "${secret:sap.prd.user}" in result.output and "realuser" not in result.output
 
 
 def test_connections_test(project, monkeypatch):
-    ok = cli(project, "connections", "test", "sap_erp")
+    ok = cli(project, "connections", "test", "sap")
     assert ok.exit_code == 0 and "mock (in-process)" in ok.output
-    assert "(1 entry)" in cli(project, "connections", "test", "local_files").output
-    monkeypatch.setenv("CARTAGE_SECRET__SAP__USER", "u")
-    monkeypatch.setenv("CARTAGE_SECRET__SAP__PASSWD", "p")
-    rfc = cli(project, "connections", "test", "sap_erp", "--env", "prd")
-    assert rfc.exit_code == 2 and "'rfc' is not available" in rfc.output
+    assert "(1 entry)" in cli(project, "connections", "test", "samples").output
+    monkeypatch.setenv("CARTAGE_SECRET__SAP__PRD__USER", "u")
+    monkeypatch.setenv("CARTAGE_SECRET__SAP__PRD__PASSWD", "p")
+    rfc = cli(project, "connections", "test", "sap", "--env", "prd")  # ashost, sysnr, client are still placeholders
+    assert rfc.exit_code == 2 and 'is still "<fill me>"' in rfc.output
 
 
 def test_state_show_and_reset(project):
@@ -45,15 +45,17 @@ def test_state_reset_asks_for_confirmation(project):
 
 
 def test_connections_test_masks_secrets(project, monkeypatch):
-    monkeypatch.setenv("CARTAGE_SECRET__SAP__USER", "realuser1")
-    monkeypatch.setenv("CARTAGE_SECRET__SAP__PASSWD", "p4ssw0rd")
+    monkeypatch.setenv("CARTAGE_SECRET__SAP__PRD__USER", "realuser1")
+    monkeypatch.setenv("CARTAGE_SECRET__SAP__PRD__PASSWD", "p4ssw0rd")
 
     class Leaky:
         @classmethod
         def check_connection(cls, config, root):
             return f"logged in as {config['user']}"
 
+    connections = project / "connections.yaml"
+    connections.write_text(connections.read_text().replace('"<fill me>"', '"x"'))
     monkeypatch.setattr("cartage.cli.registry.connection_class", lambda ctype: Leaky)
-    result = cli(project, "connections", "test", "sap_erp", "--env", "prd")
+    result = cli(project, "connections", "test", "sap", "--env", "prd")
     assert result.exit_code == 0, result.output
     assert "logged in as ****" in result.output and "realuser1" not in result.output

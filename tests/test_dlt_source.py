@@ -38,7 +38,7 @@ source:
   incremental: { cursor: updated_at, initial: "2024-01-01" }
 engine: dlt
 destination:
-  connection: sap_erp
+  connection: sap
   bapi: BAPI_MATERIAL_SAVEDATA
   mapping:
     HEADDATA.MATERIAL: material

@@ -20,7 +20,7 @@ connections:
 """
 
 PIPELINE = """\
-name: materials_to_sap
+name: materials
 source:
   connection: local_files
   format: csv
@@ -31,7 +31,7 @@ transforms:
   - batch: transforms.materials:dedupe
     with: { key: material }
 destination:
-  connection: sap_erp
+  connection: sap
   bapi: BAPI_MATERIAL_SAVEDATA
 """
 
@@ -66,7 +66,7 @@ def test_default_env_must_be_listed(root):
 
 def test_load_pipeline_by_bare_name(root):
     pipeline = load_project(root).load_pipeline("materials")
-    assert pipeline.name == "materials_to_sap"
+    assert pipeline.name == "materials"
     assert pipeline.source.options() == {"format": "csv", "path": "materials/*.csv", "incremental": True}
     assert [(t.kind, t.ref, t.with_) for t in pipeline.transforms] == [
         ("map", "transforms.materials:normalize_uom", {}),
@@ -79,8 +79,8 @@ def test_load_pipeline_by_bare_name(root):
 
 def test_multiple_pipeline_destinations(root):
     pipeline_text = PIPELINE.replace(
-        "destination:\n  connection: sap_erp\n  bapi: BAPI_MATERIAL_SAVEDATA\n",
-        "destinations:\n  - connection: sap_erp\n    bapi: BAPI_MATERIAL_SAVEDATA\n  - connection: warehouse\n    table_name: materials\n",
+        "destination:\n  connection: sap\n  bapi: BAPI_MATERIAL_SAVEDATA\n",
+        "destinations:\n  - connection: sap\n    bapi: BAPI_MATERIAL_SAVEDATA\n  - connection: warehouse\n    table_name: materials\n",
     )
     connections_text = CONNECTIONS.replace(
         "  local_files:\n",
@@ -91,7 +91,7 @@ def test_multiple_pipeline_destinations(root):
 
     destinations = load_project(root).load_pipeline("materials").destination_specs
 
-    assert [spec.connection for spec in destinations] == ["sap_erp", "warehouse"]
+    assert [spec.connection for spec in destinations] == ["sap", "warehouse"]
     assert destinations[1].options() == {"table_name": "materials"}
 
 
@@ -99,11 +99,11 @@ def test_multiple_pipeline_destinations(root):
     "replacement, message",
     [
         (
-            "destination:\n  connection: sap_erp\n  bapi: BAPI_MATERIAL_SAVEDATA\ndestinations:\n  - connection: warehouse\n",
+            "destination:\n  connection: sap\n  bapi: BAPI_MATERIAL_SAVEDATA\ndestinations:\n  - connection: warehouse\n",
             "either 'destination' or 'destinations'",
         ),
         (
-            "destinations:\n  - connection: sap_erp\n  - connection: sap_erp\n",
+            "destinations:\n  - connection: sap\n  - connection: sap\n",
             "set .name. on destinations that share a connection",
         ),
         ("", "set 'destination' or a non-empty 'destinations' list"),
@@ -111,7 +111,7 @@ def test_multiple_pipeline_destinations(root):
 )
 def test_invalid_destination_selection(root, replacement, message):
     pipeline_text = PIPELINE.replace(
-        "destination:\n  connection: sap_erp\n  bapi: BAPI_MATERIAL_SAVEDATA\n", replacement
+        "destination:\n  connection: sap\n  bapi: BAPI_MATERIAL_SAVEDATA\n", replacement
     )
     (root / "pipelines" / "materials.yaml").write_text(pipeline_text)
     with pytest.raises(CartageError, match=message):
@@ -144,8 +144,8 @@ def test_connection_lookup(root):
     assert project.connection("local_files", "dev") == ("filesystem", {"bucket_url": "./data"}, "connections.yaml:5")
     with pytest.raises(CartageError, match="no settings for environment 'prd'"):
         project.connection("local_files", "prd")
-    with pytest.raises(CartageError, match="Unknown connection 'sap_erp'"):
-        project.connection("sap_erp", "dev")
+    with pytest.raises(CartageError, match="Unknown connection 'sap'"):
+        project.connection("sap", "dev")
 
 
 def test_an_environment_can_override_the_type(root):

@@ -34,7 +34,7 @@ def add_lakes(project: Path, tmp_path: Path, *names: str) -> None:
     path.write_text(path.read_text() + "".join(
         f"\n  {n}:\n    type: filesystem\n    envs:\n      dev: {{ bucket_url: file://{tmp_path / n} }}\n"
         for n in names))
-    (project / "data" / "materials" / "materials.csv").write_text(MATERIALS)
+    (project / "data" / "sample" / "materials.csv").write_text(MATERIALS)
 
 
 def pipeline(project: Path, name: str, body: str) -> None:
@@ -42,9 +42,9 @@ def pipeline(project: Path, name: str, body: str) -> None:
 
 
 CSV_SOURCE = """source:
-  connection: local_files
+  connection: samples
   format: csv
-  path: materials/*.csv
+  path: materials.csv
 transforms:
   - map: transforms.materials:normalize_uom
 engine: dlt
