@@ -23,6 +23,11 @@ connections:                                source:
 An environment can set its own `type`, so one connection can be DuckDB on a laptop and Snowflake in Airflow while
 pipelines stay the same: `dev: { type: duckdb, credentials: dev.duckdb }`.
 
+A pipeline can also replace its whole source in one environment with `source.envs`, e.g. a sample file in `dev`:
+`source: {ref: ..., envs: {dev: {connection: samples, path: sample.csv, format: csv}}}`. A `ref:` source has one
+`with:` block for every environment, so its secrets name the environment with `{env}`:
+`${secret:database.{env}.credentials}`. A value of `"<fill me>"` (what `cartage init` writes) is reported as unfilled.
+
 Any setting can be a reference instead of a literal: `${secret:key}`, `${env:NAME}` or `${airflow:<conn_id>.<field>}`
 (see the README's [Secrets](../README.md#secrets) and [Airflow connections](../README.md#airflow-connections)).
 Pipeline `with:` values can use them too.

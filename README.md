@@ -42,19 +42,44 @@ other load tools can be supported later without changing your pipelines.
 
 ```bash
 pip install cartage
-cartage init demo && cd demo
+cartage init demo --answers https://raw.githubusercontent.com/datacoves/cartage/main/examples/sap/answers.yaml --yes
+cd demo
 cartage validate
 cartage plan materials        # dry run: records before/after transforms and the BAPI payloads
 cartage run materials         # reads 20 rows, filters 2, sends 18: 16 load, 2 fail on purpose (exit 1)
 cartage run materials --advance-state
 cartage run materials         # incremental: nothing new to load
-cartage generate              # dags/materials_to_sap.py
-cartage generate -t dagster   # orchestration/dagster/<pipeline>.py, for pipelines with schedule.dagster
-cartage generate -t prefect   # orchestration/prefect/<pipeline>.py, for pipelines with schedule.prefect
+cartage generate              # dags/materials.py
 ```
 
-Split-screen demo: run `cartage sap mock` in one terminal, set `url: http://localhost:8765` on `sap_erp.dev`
+The demo runs in `dev` on a sample file and a mock SAP; its `prd` environment reads S3 and calls SAP, once the
+`"<fill me>"` placeholders are filled. Run `cartage init <dir>` without `--answers` to create your own project; see
+[Creating a project](#creating-a-project).
+
+Split-screen demo: run `cartage sap mock` in one terminal, set `url: http://localhost:8765` on `sap.dev`
 in `connections.yaml`, and run the pipeline in another terminal.
+
+## Creating a project
+
+`cartage init <dir>` asks a few questions and writes a project that validates straight away:
+
+1. the project name and environments (`dev, prd`; the first is the default),
+2. the source system: files (a folder, `s3://`, `gs://`, `az://`, `https://`), a REST API, a SQL database or a Python
+   function, plus a few details for it,
+3. the destination: any dlt destination (`snowflake`, `duckdb`, `postgres`, ...), `file_export` or `sap_bapi`,
+4. an optional sample file: with one, the first environment is fully local (the sample replaces the source through
+   `source.envs`, and the destination becomes DuckDB, the SAP mock or a local folder), so `cartage run` works before
+   any credentials exist,
+5. the pipeline name and an optional schedule (Airflow, Dagster or Prefect).
+
+Credentials become placeholders: settings in `connections.yaml` and `${secret:<connection>.<env>.<field>}`
+references to `.cartage/secrets.yaml`, both `"<fill me>"`. The fields come from dlt's own credential classes, so every
+dlt destination is covered; optional fields are listed as comments. `cartage validate --env <env>` names every
+placeholder still to fill.
+
+`--answers <path-or-url>` answers questions from a file (the rest are asked, or take their defaults with `--yes`).
+An answers file can also carry pipeline content: `transforms`, `destination_options` and `copy` (files to copy, relative
+to the answers file). [`examples/sap/answers.yaml`](examples/sap/answers.yaml) builds the demo above this way.
 
 ## Install
 
@@ -94,7 +119,7 @@ become an engine without changing pipelines, as long as it can run Python transf
 
 | Command                                           | Does                                                                  |
 | ------------------------------------------------- | --------------------------------------------------------------------- |
-| `cartage init <dir>`                              | create a demo project (CSV → transforms → mock SAP)                   |
+| `cartage init <dir> [--answers <file-or-url>] [--yes]` | create a project from questions or an answers file           |
 | `cartage validate [pipelines...]`                 | check YAML, connections, secrets, transforms and mappings; moves no data |
 | `cartage plan <pipeline> [-n 3]`                  | dry run: each record before/after transforms (or why it was dropped), and the payloads |
 | `cartage run <pipeline>`                          | run it; `--env`, `--engine`, `--full-refresh`, `--advance-state`, `--json` |
@@ -163,7 +188,7 @@ connections:
       dev: { type: duckdb, credentials: dev.duckdb }     # an environment may use another system
       prd: { credentials: "${secret:snowflake.connection_string}" }
 
-  sap_erp:
+  sap:
     type: sap_bapi
     envs:
       dev: { transport: mock, client: "100" }
@@ -189,7 +214,7 @@ list of `destinations`, see [Multiple destinations](#multiple-destinations)). A 
 must have exactly one of `map`, `filter`, or `batch`; each reference uses the `module:function` format.
 
 ```yaml
-name: materials_to_sap
+name: materials
 source:
   connection: local_files
   format: csv
@@ -203,7 +228,7 @@ transforms:
     with: { key: material }
 
 destination:
-  connection: sap_erp
+  connection: sap
   bapi: BAPI_MATERIAL_SAVEDATA
   mapping:
     HEADDATA.MATERIAL: material
@@ -406,7 +431,7 @@ read once per destination; to read it once, land it in a `filesystem` connection
 ```yaml
 destinations:
   - { connection: warehouse, table_name: materials, write_disposition: merge, primary_key: material }
-  - { connection: sap_erp, bapi: BAPI_MATERIAL_SAVEDATA, mapping: { ... } }
+  - { connection: sap, bapi: BAPI_MATERIAL_SAVEDATA, mapping: { ... } }
 ```
 
 ## Orchestrators
