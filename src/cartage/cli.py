@@ -172,7 +172,7 @@ def connections_test(name: str = typer.Argument(..., help="Connection name."), e
         project = load_project(OPTS.project_dir)
         env = project.resolve_env(env)
         ctype, config, where = project.connection(name, env)
-        config = Secrets(project.root).resolve(config, where)
+        config = Secrets(project.root, env=env).resolve(config, where)
         cls = registry.connection_class(ctype)
         if not hasattr(cls, "state_backend"):  # destination adapters: dlt destinations get their type as settings
             config = registry.destination_config(ctype, config)
@@ -185,7 +185,7 @@ def _stores(pipeline: str, env: str | None) -> tuple[dict[str, StateStore], str,
     project = load_project(OPTS.project_dir)
     env = project.resolve_env(env)
     loaded = project.load_pipeline(pipeline)
-    backend = state_backend(project, env, Secrets(project.root))
+    backend = state_backend(project, env, Secrets(project.root, env=env))
     return {name: StateStore(backend, name, env) for name in loaded.run_names().values()}, loaded.name, env
 
 

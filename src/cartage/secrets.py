@@ -12,7 +12,8 @@ from ruamel.yaml.error import YAMLError
 
 from cartage.core import CartageError
 
-REF = re.compile(r"\$\{(secret|env|airflow):([A-Za-z0-9_.\-]+)\}")
+REF = re.compile(r"\$\{(secret|env|airflow):([A-Za-z0-9_.\-{}]+)\}")
+FILL_ME = "<fill me>"  # the placeholder `cartage init` writes; resolving one is a configuration error
 AIRFLOW_FIELDS = ("host", "login", "password", "schema", "port")
 SECRETS_FILE = Path(".cartage") / "secrets.yaml"
 
@@ -63,9 +64,10 @@ def references(obj: Any, kind: str) -> set[str]:
 
 
 class Secrets:
-    def __init__(self, root: Path, environ: Mapping[str, str] | None = None):
+    def __init__(self, root: Path, environ: Mapping[str, str] | None = None, env: str | None = None):
         self.root = root
         self.environ = os.environ if environ is None else environ
+        self.env = env  # fills {env} in secret keys: ${secret:database.{env}.credentials}
         self._file: dict | None = None
 
     def _file_values(self) -> dict:
@@ -84,6 +86,10 @@ class Secrets:
         return self._file
 
     def lookup(self, kind: str, key: str, where: str) -> str:
+        if "{env}" in key:
+            if self.env is None:
+                raise CartageError(f"'{key}' uses {{env}}, but no environment is set (referenced at {where})")
+            key = key.replace("{env}", self.env)
         if kind == "env":
             if key not in self.environ:
                 raise CartageError(f"Environment variable {key} is not set (referenced at {where})", hint=f"export {key}=...")
@@ -106,16 +112,24 @@ class Secrets:
                                        hint=f"Set {env_key(key)} or add it to {SECRETS_FILE.as_posix()}")
                 value = node
         value = str(value)
+        if value == FILL_ME:
+            source = env_key(key) if kind == "secret" and self.environ.get(env_key(key)) == FILL_ME \
+                else SECRETS_FILE.as_posix()
+            raise CartageError(f'{key} is still "{FILL_ME}" ({source}, referenced at {where})',
+                               hint=f"Replace the placeholder in {source}")
         # ponytail: mask only values >= 4 chars; secrets under 4 chars (e.g., "22", "h1") slip through to keep noise out of error output
         if len(value) >= 4:
             _REVEALED.add(value)
         return value
 
-    def resolve(self, obj: Any, where: str) -> Any:
+    def resolve(self, obj: Any, where: str, path: str = "") -> Any:
         if isinstance(obj, dict):
-            return {k: self.resolve(v, where) for k, v in obj.items()}
+            return {k: self.resolve(v, where, f"{path}.{k}" if path else str(k)) for k, v in obj.items()}
         if isinstance(obj, list):
-            return [self.resolve(v, where) for v in obj]
+            return [self.resolve(v, where, f"{path}[{i}]") for i, v in enumerate(obj)]
         if isinstance(obj, str):
+            if obj == FILL_ME:
+                raise CartageError(f'{path or "a value"} at {where} is still "{FILL_ME}"',
+                                   hint="Replace the placeholder with the real value")
             return REF.sub(lambda m: self.lookup(m.group(1), m.group(2), where), obj)
         return obj

@@ -4,7 +4,7 @@ from typer.testing import CliRunner
 
 from cartage import ui
 from cartage.core import CartageError
-from cartage.secrets import Secrets, mask
+from cartage.secrets import FILL_ME, Secrets, mask
 
 
 def test_env_reference(tmp_path):
@@ -97,3 +97,37 @@ def test_debug_traceback_masks_secret_values(tmp_path):
 
     result = CliRunner().invoke(t)
     assert "Traceback" in result.output and "hunter3hunter3" not in result.output  # ggignore (fake test value)
+
+
+def secrets_file(tmp_path, text):
+    (tmp_path / ".cartage").mkdir(exist_ok=True)
+    (tmp_path / ".cartage" / "secrets.yaml").write_text(text)
+    return tmp_path
+
+
+def test_env_placeholder_in_secret_keys(tmp_path):
+    root = secrets_file(tmp_path, "db:\n  prd:\n    url: postgresql://x\n")
+    assert Secrets(root, environ={}, env="prd").resolve("${secret:db.{env}.url}", "p.yaml") == "postgresql://x"
+
+
+def test_env_placeholder_needs_an_environment(tmp_path):
+    with pytest.raises(CartageError, match=r"\{env\}"):
+        Secrets(tmp_path, environ={}).resolve("${secret:db.{env}.url}", "p.yaml")
+
+
+def test_unfilled_secret_names_the_key_and_file(tmp_path):
+    root = secrets_file(tmp_path, f'warehouse:\n  prd:\n    password: "{FILL_ME}"\n')
+    with pytest.raises(CartageError) as info:
+        Secrets(root, environ={}, env="prd").resolve({"password": "${secret:warehouse.prd.password}"}, "c.yaml:3")
+    assert 'warehouse.prd.password is still "<fill me>"' in info.value.message
+    assert ".cartage/secrets.yaml" in info.value.message
+
+
+def test_unfilled_setting_names_its_path(tmp_path):
+    with pytest.raises(CartageError, match='credentials.host at c.yaml:5 is still "<fill me>"'):
+        Secrets(tmp_path, environ={}).resolve({"credentials": {"host": FILL_ME}}, "c.yaml:5")
+
+
+def test_unfilled_value_from_the_environment_is_also_caught(tmp_path):
+    with pytest.raises(CartageError, match="is still"):
+        Secrets(tmp_path, environ={"CARTAGE_SECRET__A__B": FILL_ME}).resolve("${secret:a.b}", "x")

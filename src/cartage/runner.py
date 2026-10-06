@@ -50,7 +50,7 @@ def prepare(project: Project, pipeline_ref: str, env: str | None = None, engine:
     env = project.resolve_env(env)
     pipeline = project.load_pipeline(pipeline_ref)
     label = project.rel(pipeline.path)
-    secrets = Secrets(project.root)
+    secrets = Secrets(project.root, env=env)
 
     spec = pipeline.source_for(env)
     if spec.connection:
