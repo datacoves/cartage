@@ -78,20 +78,18 @@ def plugins_table(found: dict[str, dict]) -> None:
     console.print(table)
 
 
-def init_done(directory: Path, created: list[Path]) -> None:
+def init_done(directory: Path, created: list[Path], placeholders: list[str], pipeline: str) -> None:
     body = Text()
     body.append(f"Created {len(created)} files in {directory}\n\n", style="green")
+    if placeholders:
+        body.append('Fill in every "<fill me>" (secrets go in .cartage/secrets.yaml):\n', style="bold")
+        for where in placeholders:
+            body.append(f"  {where}\n", style="yellow")
+        body.append("\n")
     body.append("Next steps:\n", style="bold")
-    for cmd in (
-        f"cd {directory}",
-        "cartage validate",
-        "cartage plan materials",
-        "cartage run materials",
-    ):
+    for cmd in (f"cd {directory}", "cartage validate", f"cartage plan {pipeline}", f"cartage run {pipeline}"):
         body.append(f"  $ {cmd}\n", style="cyan")
-    console.print(
-        Panel(body, title="cartage init", title_align="left", border_style="green")
-    )
+    console.print(Panel(body, title="cartage init", title_align="left", border_style="green"))
 
 
 MAX_ERRORS = 20

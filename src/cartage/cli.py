@@ -12,10 +12,13 @@ from rich.panel import Panel
 from cartage import __version__, registry, ui
 from cartage.adapters.destinations.sap.transports.mock import make_server
 from cartage.checks import check_pipeline
-from cartage.config import load_project
+from cartage.config import PROJECT_FILE, load_project
 from cartage.core import FatalRunError
+from cartage.init import write_project
+from cartage.init.answers import Origin, fetch_files, load_answers
+from cartage.init.plan import placeholders, plan_project
+from cartage.init.questions import ask
 from cartage.runner import prepare_all, preview, run_pipeline, state_backend
-from cartage.scaffold import init_project
 from cartage.secrets import Secrets, mask
 from cartage.state import StateStore
 
@@ -66,11 +69,24 @@ def plugins() -> None:
 
 
 @app.command()
-def init(directory: Path = typer.Argument(Path("."), help="Folder for the new project.")) -> None:
-    """Create a demo project: CSV materials → transforms → mock SAP."""
+def init(
+    directory: Path = typer.Argument(Path("."), help="Folder for the new project."),
+    answers: str | None = typer.Option(None, "--answers", help="Answers file (a path or an http(s) URL); "
+                                                                "its answers are not asked."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Take the defaults for every question not answered."),
+) -> None:
+    """Create a project: asks about environments, the source, the destination and scheduling, then writes it."""
     with ui.handle_errors(OPTS.debug):
-        created = init_project(directory)
-    ui.init_done(directory, created)
+        if (directory / PROJECT_FILE).exists():
+            write_project(directory, {})  # raises: already a project
+        loaded, answered, origin = load_answers(answers)
+        final = ask(loaded, answered, directory.resolve().name, yes, ui.console)
+        fetched = fetch_files(final, origin, origin if "sample_data" in answered else Origin.cwd())
+        files = plan_project(final, fetched)
+        created = write_project(directory, files)
+        if origin.is_url:
+            ui.console.print(f"Fetched from {origin.base}: {', '.join(sorted(fetched)) or 'nothing else'}")
+    ui.init_done(directory, created, placeholders(files), final.pipeline_name)
 
 
 EnvOption = typer.Option(None, "--env", "-e", help="Environment (default: default_env).")
