@@ -12,9 +12,9 @@ from rich.panel import Panel
 from cartage import __version__, registry, ui
 from cartage.adapters.destinations.sap.transports.mock import make_server
 from cartage.checks import check_pipeline
-from cartage.config import PROJECT_FILE, load_project
+from cartage.config import load_project
 from cartage.core import FatalRunError
-from cartage.init import write_project
+from cartage.init import refuse_existing, write_project
 from cartage.init.answers import Origin, fetch_files, load_answers
 from cartage.init.plan import placeholders, plan_project
 from cartage.init.questions import ask
@@ -77,8 +77,7 @@ def init(
 ) -> None:
     """Create a project: asks about environments, the source, the destination and scheduling, then writes it."""
     with ui.handle_errors(OPTS.debug):
-        if (directory / PROJECT_FILE).exists():
-            write_project(directory, {})  # raises: already a project
+        refuse_existing(directory)  # before any question
         loaded, answered, origin = load_answers(answers)
         final = ask(loaded, answered, directory.resolve().name, yes, ui.console)
         fetched = fetch_files(final, origin, origin if "sample_data" in answered else Origin.cwd())

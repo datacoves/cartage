@@ -121,3 +121,37 @@ def test_unknown_destination_lists_the_types():
     with pytest.raises(CartageError, match="Unknown destination 'snowflak'") as info:
         plan_project(InitAnswers(destination="snowflak"), {})
     assert "snowflake" in info.value.hint
+
+
+def test_duckdb_without_a_sample_runs_into_a_project_file(tmp_path):
+    root, _ = write(tmp_path, InitAnswers(project="p", files={"location": "./data"}))
+    (root / "data").mkdir()
+    (root / "data" / "a.csv").write_text("id,name\n1,a\n2,b\n")
+    result = cli(root, "run", "files_to_duckdb", "--env", "prd", "--json")
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["read"] == 2
+    assert (root / "p.duckdb").is_file()
+
+
+def test_yaml_typed_values_stay_strings(tmp_path):
+    root, _ = write(tmp_path, InitAnswers(project="2024", files={"location": "true", "path": "null"}))
+    from cartage.config import load_project
+
+    project = load_project(root)
+    assert project.config.project == "2024"
+    assert project.load_pipeline("files_to_duckdb").source.options()["path"] == "null"
+
+
+def test_copy_cannot_replace_generated_files():
+    with pytest.raises(CartageError, match="cartage.yaml"):
+        plan_project(InitAnswers(copy=["cartage.yaml"]), {"cartage.yaml": b"project: evil\n"})
+
+
+def test_csv_samples_are_read_as_text_by_default(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    sample = b"material,uom\n000123,EA\n1000140000000000000001,EA\n"
+    answers = InitAnswers(project="p", destination="file_export", sample_data="m.csv")
+    root, _ = write(tmp_path, answers, {"data/sample/m.csv": sample})
+    result = cli(root, "run", answers.pipeline_name, "--json")
+    assert result.exit_code == 0, result.output
+    assert '"000123"' in (root / "output" / f"{answers.pipeline_name}.jsonl").read_text()

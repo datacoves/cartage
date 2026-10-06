@@ -26,7 +26,10 @@ CONNECTION_STRINGS = {"postgresql": "postgresql://<username>:<password>@<host>:<
 
 
 def _scalar(value: str) -> str:
-    return value if PLAIN.fullmatch(value) and not value.endswith(" ") else json.dumps(value)
+    """Plain when YAML reads it back as the same string; quoted otherwise (2024, true, null, *.csv, ...)."""
+    if PLAIN.fullmatch(value) and not value.endswith(" ") and YAML(typ="safe").load(value) == value:
+        return value
+    return json.dumps(value)
 
 
 def _dump(value: Any) -> list[str]:
@@ -141,11 +144,15 @@ def _connections(a: InitAnswers, first: str, real: list[str], secrets: _Secrets)
                        f"passwd: {json.dumps(secrets.ref(name, e, 'passwd'))}"]
     else:
         if sample:
-            envs[first] = ("{bucket_url: ./lake}" if d == "filesystem" else f"{{credentials: {a.project}.duckdb}}"
-                           if d == "duckdb" else f"{{type: duckdb, credentials: {a.project}.duckdb}}")
+            local = _scalar(f"{a.project}.duckdb")
+            envs[first] = ("{bucket_url: ./lake}" if d == "filesystem" else f"{{credentials: {local}}}"
+                           if d == "duckdb" else f"{{type: duckdb, credentials: {local}}}")
         for e in real:
-            envs[e] = ([f"bucket_url: {FILL}"] if d == "filesystem"
-                       else credential_lines(credentials(d, variant=a.auth_variant), name, e, secrets))
+            if d == "duckdb":  # a file in the project, named after it (dlt's default name clashes with the dataset)
+                envs[e] = f"{{credentials: {_scalar(f'{a.project}.duckdb')}}}"
+            else:
+                envs[e] = ([f"bucket_url: {FILL}"] if d == "filesystem"
+                           else credential_lines(credentials(d, variant=a.auth_variant), name, e, secrets))
     lines += [*([""] if a.source == "files" else []), *_connection(name, d, envs)]
     if sample:
         lines += ["", *_connection("samples", "filesystem", {first: "{bucket_url: ./data/sample}"})]
@@ -203,8 +210,11 @@ def _pipeline(a: InitAnswers, first: str, real: list[str], secrets: _Secrets) ->
         note = f"# the sample file: {first} runs locally, no credentials"
         lines += ["  envs:", f"    {first}:                                   {note}", "      connection: samples",
                   f"      path: {_scalar(s.file_name)}", f"      format: {s.file_format}"]
-        if s.reader_options:
-            lines += ["      reader_options:", *_indent(_dump(s.reader_options), 8)]
+        reader_options = s.reader_options
+        if not reader_options and s.file_format == "csv":  # samples hold codes such as 000123: read them as text
+            reader_options = {"dtype": "str", "keep_default_na": False}
+        if reader_options:
+            lines += ["      reader_options:", *_indent(_dump(reader_options), 8)]
         if s.incremental:
             lines.append("      incremental: true")
     if a.transforms:
@@ -284,6 +294,10 @@ def plan_project(a: InitAnswers, fetched: dict[str, bytes]) -> dict[str, bytes]:
         files["sources/__init__.py"] = ""
         files[f"sources/{a.pipeline_name}.py"] = SOURCE_STUB.format(name=a.pipeline_name, function=a.python.function)
     out = {path: text.encode() for path, text in files.items()}
+    clashes = sorted(set(fetched) & set(out))
+    if clashes:
+        raise CartageError(f"copy would replace files init writes: {', '.join(clashes)}",
+                           hint="copy adds files (e.g. transforms/); it cannot replace the project's own files")
     out.update(fetched)
     return out
 

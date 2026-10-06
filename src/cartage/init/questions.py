@@ -1,6 +1,8 @@
 """Interactive questions for `cartage init`. Anything the answers file set is not asked; with --yes nothing is."""
 from __future__ import annotations
 
+from pydantic import ValidationError
+from rich.console import Console
 from rich.prompt import Prompt
 
 from cartage import registry
@@ -27,9 +29,13 @@ def ask(answers: InitAnswers, answered: set[str], default_project: str, yes: boo
     if need("project"):
         a.project = text("Project name", a.project or default_project)
     a.project = a.project or default_project
-    if need("environments"):
+    while need("environments"):  # checked here, so a typo does not cost the rest of the interview
         raw = text("Environments, comma-separated (the first is the default)", ", ".join(a.environments))
-        a.environments = [e.strip() for e in raw.split(",")]
+        try:
+            a.environments = InitAnswers(environments=[e.strip() for e in raw.split(",")]).environments
+            break
+        except ValidationError as e:
+            (console or Console()).print(f"[red]{e.errors()[0]['msg'].removeprefix('Value error, ')}[/red]")
     if need("source"):
         a.source = choice("Source system", SOURCES, a.source)
     if need(a.source):

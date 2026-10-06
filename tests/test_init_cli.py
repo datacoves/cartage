@@ -53,3 +53,16 @@ def test_refuses_to_overwrite_any_file_and_writes_nothing(tmp_path):
     assert result.exit_code == 2 and ".gitignore" in result.output
     assert not (tmp_path / "cartage.yaml").exists()
     assert (tmp_path / ".gitignore").read_text() == "mine\n"
+
+
+def test_bad_environments_are_asked_again(tmp_path):
+    answers = "demo\n dev, ,dev\ndev, prd\nfiles\n./in\n*.csv\ncsv\nduckdb\n\nappend\n\norders\nnone\n"
+    result = init(str(tmp_path / "p"), input=answers)
+    assert result.exit_code == 0, result.output
+    assert load_project(tmp_path / "p").config.environments == ["dev", "prd"]
+
+
+def test_an_existing_file_is_refused_before_any_question(tmp_path):
+    (tmp_path / ".gitignore").write_text("mine\n")
+    result = init(str(tmp_path), input="")  # no answers: a question would fail differently
+    assert result.exit_code == 2 and ".gitignore" in result.output

@@ -140,9 +140,14 @@ class Origin:
         return _is_url(self.base)
 
     def resolve(self, name: str) -> str:
+        if self.is_url:  # a remote answers file reads from its own site only, never from the local disk
+            target, base = urlparse(urljoin(self.base, name)), urlparse(self.base)
+            if (target.scheme, target.netloc) != (base.scheme, base.netloc):
+                raise CartageError(f"'{name}' must stay on {base.scheme}://{base.netloc}, like the answers file")
+            return target.geturl()
         if _is_url(name) or Path(name).is_absolute():
             return name
-        return urljoin(self.base, name) if self.is_url else str(Path(self.base).parent / name)
+        return str(Path(self.base).parent / name)
 
     def read(self, target: str) -> bytes:
         try:

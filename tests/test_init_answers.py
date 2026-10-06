@@ -86,3 +86,15 @@ def test_missing_sample_names_the_path(tmp_path):
 def test_copy_targets_stay_inside_the_project(bad):
     with pytest.raises(CartageError, match="relative path"):
         safe_relative(bad)
+
+
+@pytest.mark.parametrize("name", ["file:///etc/passwd", "https://other.example/x.csv"])
+def test_a_remote_answers_file_reads_only_from_its_own_site(name):
+    with pytest.raises(CartageError, match="must stay"):
+        Origin("https://example.com/x/answers.yaml").resolve(name)
+
+
+def test_absolute_paths_in_a_remote_answers_file_never_read_the_local_disk():
+    origin = Origin("https://example.com/x/answers.yaml")
+    assert origin.resolve("/etc/passwd") == "https://example.com/etc/passwd"
+    assert origin.resolve("../m.csv") == "https://example.com/m.csv"
