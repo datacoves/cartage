@@ -44,3 +44,8 @@ def test_introspection_failure_falls_back(monkeypatch):
     assert c.fallback and c.fields == ()
     assert c.docs == "https://dlthub.com/docs/dlt-ecosystem/destinations/snowflake"
     assert creds.variants("snowflake") == []
+
+
+def test_local_databases_have_no_auth_alternatives():
+    c = creds.credentials("duckdb")
+    assert names(c, required=True) == [] and c.alternatives == ()

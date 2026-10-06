@@ -29,8 +29,9 @@ class Credentials:
 
     @property
     def alternatives(self) -> tuple[str, ...]:
-        """Optional secrets when no secret is required: the auth methods to choose from (fill one)."""
-        if any(f.secret and f.required for f in self.fields):
+        """Optional secrets of a remote service (one with required fields) when no secret is required: the auth methods
+        to choose from (fill one). A local database such as DuckDB has none."""
+        if any(f.secret and f.required for f in self.fields) or not any(f.required for f in self.fields):
             return ()
         names = tuple(f.name for f in self.fields if f.secret and not f.required)
         return names if len(names) > 1 else ()
