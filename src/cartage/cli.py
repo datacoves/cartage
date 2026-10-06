@@ -62,6 +62,7 @@ def main(
 def plugins() -> None:
     """List installed sources, destinations, engines and orchestrators."""
     ui.plugins_table({kind: registry.available(kind) for kind in registry.KINDS})
+    ui.console.print(f"Connection types from dlt (destinations): {', '.join(sorted(registry.dlt_destinations()))}")
 
 
 @app.command()
@@ -172,7 +173,10 @@ def connections_test(name: str = typer.Argument(..., help="Connection name."), e
         env = project.resolve_env(env)
         ctype, config, where = project.connection(name, env)
         config = Secrets(project.root).resolve(config, where)
-        message = registry.connection_class(ctype).check_connection(config, project.root)
+        cls = registry.connection_class(ctype)
+        if not hasattr(cls, "state_backend"):  # destination adapters: dlt destinations get their type as settings
+            config = registry.destination_config(ctype, config)
+        message = cls.check_connection(config, project.root)
     ui.console.print(ui.Text.assemble(("✔ ", "green"), (name, "bold"), f" ({ctype}, {env}): ", mask(message)))
 
 

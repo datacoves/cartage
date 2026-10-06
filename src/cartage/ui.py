@@ -275,18 +275,6 @@ def plan_view(data: dict) -> None:
             title_align="left",
         )
     )
-    if data["files"] is not None:
-        files = Table("file", "action", box=box.SIMPLE_HEAD)
-        for f in data["files"]:
-            files.add_row(
-                Text(f["file"]),
-                (
-                    Text("process", style="green")
-                    if f["process"]
-                    else Text("skip (already loaded)", style="dim")
-                ),
-            )
-        console.print(files)
     if not data["records"]:
         console.print(Text("Nothing to process.", style="dim"))
         return
@@ -318,7 +306,8 @@ def connections_table(project, env: str | None) -> None:
     for name, conn in sorted(project.connections.items()):
         for conn_env, settings in conn.envs.items():
             if env is None or env == conn_env:
-                table.add_row(name, conn.type, conn_env, Text(json.dumps(settings)))
+                shown = {k: v for k, v in settings.items() if k != "type"}
+                table.add_row(name, settings.get("type", conn.type), conn_env, Text(json.dumps(shown)))
     console.print(table)
 
 

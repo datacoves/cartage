@@ -20,8 +20,8 @@ class SapDestination:
         if not options.get("bapi"):
             raise CartageError("The SAP destination needs 'bapi'", hint="e.g. bapi: BAPI_MATERIAL_SAVEDATA")
         if not options.get("mapping"):
-            raise CartageError("The SAP destination needs a 'mapping' of record fields to BAPI parameters",
-                               hint="e.g. mapping: { material: HEADDATA.MATERIAL }")
+            raise CartageError("The SAP destination needs a 'mapping' of BAPI parameters to record fields",
+                               hint="e.g. mapping: { HEADDATA.MATERIAL: material }")
         self.commit = options.get("commit", "per_record")
         if self.commit not in COMMIT_MODES:
             raise CartageError(f"Unknown commit mode '{self.commit}'", hint=f"Use one of: {', '.join(COMMIT_MODES)}")

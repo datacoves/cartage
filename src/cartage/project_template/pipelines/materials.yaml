@@ -3,7 +3,8 @@ source:
   connection: local_files
   format: csv
   path: materials/*.csv
-  incremental: true
+  reader_options: { dtype: str, keep_default_na: false }   # keep codes as text ("000123"), empty cells as ""
+  incremental: true          # only files changed since the last run
 transforms:
   - map: transforms.materials:normalize_uom
   - filter: transforms.materials:is_active
@@ -13,11 +14,11 @@ destination:
   connection: sap_erp
   bapi: BAPI_MATERIAL_SAVEDATA
   mapping:
-    material: HEADDATA.MATERIAL
-    industry: HEADDATA.IND_SECTOR
-    type: HEADDATA.MATL_TYPE
-    description: MATERIALDESCRIPTION[].MATL_DESC
-    uom: CLIENTDATA.BASE_UOM
+    HEADDATA.MATERIAL: material
+    HEADDATA.IND_SECTOR: industry
+    HEADDATA.MATL_TYPE: type
+    MATERIALDESCRIPTION[].MATL_DESC: description
+    CLIENTDATA.BASE_UOM: uom
   constants:
     MATERIALDESCRIPTION[].LANGU_ISO: EN
     HEADDATA.BASIC_VIEW: X

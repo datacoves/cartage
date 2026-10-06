@@ -21,18 +21,20 @@ other load tools can be supported later without changing your pipelines.
                 │  dlt (default)  │  python (reference)  │  future: others  │
                 └───────┬─────────────────────────────────────────┬─────────┘
                         │ reads                                   │ writes
-           files · S3 · any dlt source           SAP · files · any dlt destination
+  files (local · S3 · GCS · HTTP) · dlt sources   SAP BAPIs · file exports · dlt destinations
                         └──── your Python transforms in between ──┘
 ```
 
 ![Cartage terminal demo](https://raw.githubusercontent.com/datacoves/cartage/main/docs/cartage-demo.gif)
 
-- **Sources:** local CSV folders, S3, and any [dlt](https://dlthub.com/docs/dlt-ecosystem/verified-sources/) source.
-- **Destinations:** SAP via BAPIs (ships a mock SAP; the RFC transport is planned) and any
-  [dlt destination](https://dlthub.com/docs/dlt-ecosystem/destinations/) (filesystem/S3, DuckDB, Postgres, Snowflake,
-  BigQuery, ...), loaded natively by dlt, and local files (JSON, JSON Lines, XML, CSV). One pipeline can write to
-  several destinations.
-- **Engines:** `dlt` (default) and `python`, a dependency-free reference engine for tests (see [Engines](#engines)).
+- **Sources:** files (CSV, JSON Lines, Parquet) in a local folder, S3, GCS, Azure or over HTTP, and any
+  [dlt source](https://dlthub.com/docs/dlt-ecosystem/verified-sources/) (REST APIs, databases, SaaS) from YAML or Python.
+- **Destinations:** any [dlt destination](https://dlthub.com/docs/dlt-ecosystem/destinations/) (Snowflake, DuckDB,
+  Postgres, BigQuery, a filesystem data lake, ...), loaded natively by dlt; SAP via BAPIs (ships a mock SAP; the RFC
+  transport is planned); and file exports (JSON, JSON Lines, XML, CSV). One pipeline can write to several destinations.
+- **Connections** are named after the system (`type: snowflake`, `type: filesystem`, `type: sap_bapi`), never after
+  the engine: see [docs/connections.md](docs/connections.md).
+- **Engines:** `dlt` (default) and `python`, a plain-loop reference engine for tests (see [Engines](#engines)).
 - **Orchestrators:** Airflow, Dagster and Prefect. Generated code only calls `cartage run`, so local and production
   run the same code.
 
@@ -60,10 +62,11 @@ Cartage needs Python 3.11.4 or newer. dlt is included; extras add the rest.
 
 | Install                       | Adds                                                                         |
 | ----------------------------- | ---------------------------------------------------------------------------- |
-| `pip install cartage`         | CLI, both engines, file/dlt sources and destinations, SAP, all generators    |
-| `pip install "cartage[s3]"`   | S3 source and S3 state store                                                 |
+| `pip install cartage`         | CLI, both engines, local files, file exports, SAP (mock), all generators     |
+| `pip install "cartage[s3]"`   | `s3://` filesystem connections and state (same as `dlt[s3]`)                 |
 | `pip install "cartage[all]"`  | `s3` and `airflow`                                                           |
-| `pip install "dlt[snowflake]"`| the driver for a dlt destination or source (`postgres`, `bigquery`, ...)     |
+| `pip install "dlt[snowflake]"`| the driver for a dlt destination (`postgres`, `bigquery`, ...)               |
+| `pip install "dlt[gs]"`       | other file locations: `dlt[gs]`, `dlt[az]`, `dlt[http]` (`https://`), `dlt[sftp]` |
 
 `cartage[dlt]` still works; since 0.6 it adds nothing, as dlt is a core dependency.
 
@@ -75,10 +78,11 @@ The engine runs a pipeline: it reads from the source, applies your transforms, a
 Set it in `cartage.yaml` (`defaults.engine`), per pipeline (`engine:`), or per run (`--engine`).
 
 - **`dlt`** (default) runs every pipeline as a dlt pipeline: dlt's extraction, normalization, incremental state and
-  loading. dlt destinations load natively (bulk loads, staging, merge); record destinations such as SAP and `file`
-  plug in as a dlt custom destination, so Cartage can still report each record's result (rejects, warnings).
-- **`python`** is a plain loop with no dependencies: the reference implementation of the engine contract, for tests
-  and framework development. dlt sources and destinations need the dlt engine.
+  loading. dlt destinations load natively (bulk loads, staging, merge); record destinations (`sap_bapi`,
+  `file_export`) plug in as a dlt custom destination, so Cartage can still report each record's result (rejects, warnings).
+- **`python`** is a plain loop: the reference implementation of the engine contract, for tests and framework
+  development. It reads sources and writes record destinations; dlt destinations and `incremental` sources need the
+  dlt engine, which keeps the cursor.
 
 The engines differ in two ways today: dlt drops fields whose value is `None` before a record destination sees them,
 and the dlt engine hands record destinations batches of 100 (which is what SAP `commit: per_batch` groups).
@@ -92,12 +96,12 @@ become an engine without changing pipelines, as long as it can run Python transf
 | ------------------------------------------------- | --------------------------------------------------------------------- |
 | `cartage init <dir>`                              | create a demo project (CSV → transforms → mock SAP)                   |
 | `cartage validate [pipelines...]`                 | check YAML, connections, secrets, transforms and mappings; moves no data |
-| `cartage plan <pipeline> [-n 3]`                  | dry run: files to process, each record before/after transforms (or why it was dropped), payloads |
+| `cartage plan <pipeline> [-n 3]`                  | dry run: each record before/after transforms (or why it was dropped), and the payloads |
 | `cartage run <pipeline>`                          | run it; `--env`, `--engine`, `--full-refresh`, `--advance-state`, `--json` |
 | `cartage generate [-t airflow\|dagster\|prefect]` | write orchestrator files; `--check`, `--output`, `--show-context <pipeline>` |
 | `cartage connections list\|test <name>`           | list connections (secrets as references) or check one                 |
 | `cartage state show\|reset <pipeline>`            | inspect or delete incremental state                                   |
-| `cartage plugins`                                 | list installed sources, destinations, engines and orchestrators       |
+| `cartage plugins`                                 | list installed adapters and the connection types dlt provides         |
 | `cartage sap mock [--port 8765]`                  | run a mock SAP server that validates BAPI calls                       |
 
 Global options go before the command: `-C/--project-dir`, `-v/--verbose`, `--debug` (tracebacks), `--no-color`.
@@ -149,12 +153,18 @@ pipelines refer to the connection by name. Keep credentials out of the file and 
 ```yaml
 connections:
   local_files:
-    type: filesystem
+    type: filesystem                  # a local folder, s3://, gs://, az://, https://, ...
     envs:
-      dev: { path: ./data }
+      dev: { bucket_url: ./data }
+
+  warehouse:
+    type: snowflake                   # any dlt destination: duckdb, postgres, bigquery, ...
+    envs:
+      dev: { type: duckdb, credentials: dev.duckdb }     # an environment may use another system
+      prd: { credentials: "${secret:snowflake.connection_string}" }
 
   sap_erp:
-    type: sap
+    type: sap_bapi
     envs:
       dev: { transport: mock, client: "100" }
       prd:
@@ -168,6 +178,9 @@ connections:
 
 `${secret:key}` resolves from `CARTAGE_SECRET__<KEY>` (dots become double underscores and names are uppercased),
 then `.cartage/secrets.yaml`. `${env:NAME}` reads an environment variable directly. See [Secrets](#secrets) for details.
+
+**[docs/connections.md](docs/connections.md) lists every connection type** (`filesystem`, the dlt destinations,
+`file_export`, `sap_bapi`): which settings go in `connections.yaml` and which options go in the pipeline.
 
 ### `pipelines/*.yaml`
 
@@ -193,9 +206,9 @@ destination:
   connection: sap_erp
   bapi: BAPI_MATERIAL_SAVEDATA
   mapping:
-    material: HEADDATA.MATERIAL
-    description: MATERIALDESCRIPTION[].MATL_DESC
-    uom: CLIENTDATA.BASE_UOM
+    HEADDATA.MATERIAL: material
+    MATERIALDESCRIPTION[].MATL_DESC: description
+    CLIENTDATA.BASE_UOM: uom
   constants:
     MATERIALDESCRIPTION[].LANGU_ISO: EN
   commit: per_record
@@ -206,6 +219,21 @@ schedule:
     tags: [sap, materials]
 ```
 
+Transforms run top to bottom, and each kind can appear any number of times and in any order, so several maps,
+filters or batches chain naturally (each step with its own `with:`):
+
+```yaml
+transforms:
+  - map: transforms.materials:normalize_uom
+  - map: transforms.materials:trim_text
+  - filter: transforms.materials:is_active
+  - map: transforms.materials:add_defaults
+    with: { plant: "1000" }
+  - filter: transforms.materials:has_description
+  - batch: transforms.materials:dedupe
+    with: { key: material }
+```
+
 Source and destination fields other than `connection` are adapter options. Transform functions live in your `transforms/`
 package; `with` passes keyword arguments to the function, and `on_error: fail` stops the run on that step's first
 error instead of rejecting the record. The optional `schedule.airflow`, `schedule.dagster` and `schedule.prefect`
@@ -214,33 +242,70 @@ editing YAML to check the project and references.
 
 #### Sources
 
-| Source       | Connection settings                                              | Pipeline options                                              |
-| ------------ | ---------------------------------------------------------------- | ------------------------------------------------------------- |
-| `filesystem` | `path`                                                           | `path` (glob), `format: csv`, `incremental`, `batch_size`     |
-| `s3`         | `bucket`, `prefix`, `region`, `endpoint_url`, access keys        | `path` (glob), `format: csv`, `incremental`, `batch_size`     |
-| `dlt`        | none: a source with `ref` is a dlt source                        | `ref` (`module:function`), `with`, `incremental`, `batch_size` |
+Full reference for every type: [docs/connections.md](docs/connections.md).
 
-File sources with `incremental: true` skip files already processed. A dlt source's `ref` returns a dlt source or
-resource; `incremental: { cursor: updated_at, initial: "2024-01-01" }` adds a dlt cursor and needs the dlt engine (the default).
+| Source                         | Connection settings                         | Pipeline options                                              |
+| ------------------------------ | ------------------------------------------- | ------------------------------------------------------------- |
+| `filesystem` connection        | `bucket_url`, `credentials`                 | `path` (glob), `format` (`csv`, `jsonl`, `parquet`), `reader_options`, `incremental`, `batch_size` |
+| `ref:` (a dlt source, no connection) | —                                     | `ref` (`module:function`), `with`, `resources`, `incremental`, `batch_size` |
+
+A `filesystem` source reads every file matching `path` with dlt's typed readers (pandas for CSV), so numbers arrive as
+numbers. `reader_options` go to the reader, e.g. `{ dtype: str, keep_default_na: false }` to keep codes such as
+`000123` as text and empty cells as `""`. With `incremental: true` only files modified since the last run are read
+(a changed file is read again in full). The same connection can be a destination (a dlt data lake) and a state store.
+
+A dlt source's `ref` returns a dlt source or resource; `incremental: { cursor: updated_at, initial: "2024-01-01" }`
+adds a dlt cursor. Incremental sources need the dlt engine (the default).
 Other keys go to `dlt.sources.incremental`: `lag` (re-read a window before the last value, e.g. for late updates),
 `end_value`, `primary_key`, `row_order`, `last_value_func`, `on_cursor_value_missing`, `range_start`, `range_end`.
+When `ref` returns a dlt source with several resources, `resources: [name, ...]` picks the ones to read (default: the
+source's selected resources).
 
-#### SAP destination
+#### Generic sources (no Python)
 
-`bapi` names the BAPI, `mapping` maps record fields to BAPI parameters (`HEADDATA.MATERIAL`, `TABLE[].FIELD`) and
-`constants` sets fixed values. `commit` is `per_record` (default), `per_batch` or `none`. `cartage validate` checks
+Files need no code: point a `filesystem` connection at a folder, a bucket or a web server (`bucket_url:
+https://raw.githubusercontent.com/datasets/population/master/data`, then `path: population.csv`). `ref` also takes
+installed modules, so dlt's built-in sources need only YAML, e.g. a REST API:
+
+```yaml
+# dlt's declarative rest_api source; `config` is its configuration dict.
+source:
+  ref: dlt.sources.rest_api:rest_api_source
+  with:
+    config:
+      client: { base_url: "https://earthquake.usgs.gov/fdsnws/event/1/" }
+      resources:
+        - name: earthquakes
+          endpoint:
+            path: query
+            params: { format: geojson, starttime: "2026-10-01", endtime: "2026-10-02" }
+            data_selector: features      # where the records are in the response
+            paginator: single_page
+```
+
+Remote files need the matching dlt extra: `dlt[http]` for `https://`, `dlt[s3]`, `dlt[gs]`, `dlt[az]`. CSV and JSON
+Lines are read as records, so a column that is empty in every row is not created; declare it in the destination's
+`columns` (`{ my_column: { data_type: double } }`) if it must exist. See dlt's
+[REST API](https://dlthub.com/docs/dlt-ecosystem/verified-sources/rest_api/basic) docs for every option
+(authentication, pagination, incremental parameters). Reshape records with `transforms`; write a Python source only
+for logic the configuration can't express.
+
+#### SAP destination (`sap_bapi`)
+
+`bapi` names the BAPI, `mapping` fills BAPI parameters (`HEADDATA.MATERIAL`, `TABLE[].FIELD`) from record fields and
+`constants` fills them with fixed values; both are keyed by the BAPI parameter. `commit` is `per_record` (default), `per_batch` or `none`. `cartage validate` checks
 mapped parameters and fields against the bundled BAPI metadata; the mock SAP also rejects values that are too long,
 not allowed, or missing when required, as SAP would.
 
-#### File destination
+#### File export destination (`file_export`)
 
-`type: file` writes each run to one local file, in `json` (an array), `jsonl` (default), `xml` or `csv`. It works with
+`type: file_export` writes each run to one local file, in `json` (an array), `jsonl` (default), `xml` or `csv`. It works with
 both engines and needs no extra dependencies. `cartage plan` shows each record as it will be written.
 
 ```yaml
 connections:
   exports:
-    type: file
+    type: file_export
     envs:
       dev: { path: ./output }       # folder, relative to the project
 ```
@@ -261,21 +326,24 @@ rest.
 
 #### dlt destinations
 
-Any [dlt destination](https://dlthub.com/docs/dlt-ecosystem/destinations/) (filesystem/S3, DuckDB, Postgres,
-Snowflake, BigQuery, ...) is a `type: dlt` connection. `destination` names a `dlt.destinations` factory, or a project
-`module:function` returning one; the other settings are passed to it. Install the driver extra too, e.g.
+Every [dlt destination](https://dlthub.com/docs/dlt-ecosystem/destinations/) is a connection type of its own:
+`snowflake`, `duckdb`, `postgres`, `bigquery`, `databricks`, `filesystem` (a data lake), ... (`cartage plugins` lists
+them). The settings are that destination's dlt settings (`credentials`, `database`, `bucket_url`, ...). A project
+`module:function` returning a dlt destination works as a type too. Install the driver extra, e.g.
 `pip install "dlt[snowflake]"`. dlt destinations need the dlt engine (the default).
 
 ```yaml
 connections:
   warehouse:
-    type: dlt
+    type: snowflake
     envs:
-      dev: { destination: filesystem, bucket_url: "file:///tmp/warehouse" }
       prd:
-        destination: snowflake
         credentials: "${secret:snowflake.connection_string}"
         naming: sql_ci_v1                              # connection-level default
+  lake:
+    type: filesystem                                   # also a source and a state store
+    envs:
+      dev: { bucket_url: ./lake }
 ```
 
 ```yaml
@@ -333,7 +401,7 @@ engine: dlt
 Use `destinations:` instead of `destination:`. Each entry is its own run, in order, with its own state, rejects and
 dlt pipeline (`<pipeline>__<name>`; `name` defaults to the connection and tells apart destinations that share
 one), so a failed destination retries without reloading the others. The source is
-read once per destination; to read it once, land it in filesystem/S3 first and load from there.
+read once per destination; to read it once, land it in a `filesystem` connection first and load from there.
 
 ```yaml
 destinations:
@@ -357,7 +425,7 @@ schedule:
 
 | Target  | Output (default)                        | Settings                                                                    | Environment at run time  |
 | ------- | --------------------------------------- | --------------------------------------------------------------------------- | ------------------------ |
-| airflow | `dags/<dag_id>.py`                      | `dags_dir`, `schedule`, `tags`, `default_args`, `operator`, `operator_args`, `task_env`, `image`, ... | Airflow var `cartage_env` |
+| airflow | `dags/<dag_id>.py`                      | `dags_dir`, `schedule`, `tags`, `default_args`, `task_decorator`, `operator_args`, `dependencies`, `task_env`, `image`, ... | Airflow var `cartage_env` |
 | dagster | `orchestration/dagster/<name>.py`       | `out_dir`, `name`, `schedule`, `timezone`, `tags`, `env`, `command`, `project_dir` | `CARTAGE_ENV` env var  |
 | prefect | `orchestration/prefect/<name>.py`       | `out_dir`, `name`, `schedule`, `retries`, `tags`, `env`, `command`, `project_dir`  | `CARTAGE_ENV` env var  |
 
@@ -366,11 +434,48 @@ schedule:
 - **Prefect:** each file defines the `cartage_run` flow. `python orchestration/prefect/<name>.py` serves it on the
   schedule, or point `prefect deploy` at `orchestration/prefect/<name>.py:cartage_run`.
 - `env` defaults to `prd`; `command` (default `cartage`) may include a launcher, e.g. `uv run cartage`.
-- **Airflow:** `task_env` adds environment variables to the task (e.g. `UV_CACHE_DIR`). `operator` can be any
-  `BashOperator`-compatible class, e.g. `operators.datacoves.bash:DatacovesBashOperator`. A project template
-  (`templates/airflow/dag.py.j2`, `{% extends "cartage/airflow_dag.py.j2" %}`) can override the blocks `header`,
-  `imports`, `default_args`, `schedule`, `dag`, `task` and `extra`, e.g.
-  `{% block schedule %}my_utils.set_schedule({{ super() }}){% endblock %}`.
+- **Airflow:** DAGs use the TaskFlow API (`@dag`, `@task.bash`). `task_decorator` picks the task decorator, e.g.
+  `datacoves_bash` for `@task.datacoves_bash`; `operator_args` are its keyword arguments. `task_env` adds
+  environment variables to the task (e.g. `UV_CACHE_DIR`). See [Airflow settings](#airflow-settings) for packages,
+  owner/email and functions that build `default_args` or the schedule.
+
+### Airflow settings
+
+```yaml
+# cartage.yaml
+orchestrators:
+  airflow:
+    task_decorator: datacoves_bash
+    command: uvx --from "cartage>=0.8.0" cartage
+    dependencies: ["dlt[snowflake,parquet]"]                  # every DAG
+    default_args: { owner: data-team, email: [data@example.com], retries: 1 }
+
+# pipelines/loans.yaml
+schedule:
+  airflow:
+    schedule: "0 3 * * *"
+    dependencies: ["dlt[http]"]                               # only this DAG
+    default_args: { owner: Noel Gomez, email: [noel@example.com] }
+```
+
+- `dependencies` from `cartage.yaml` and the pipeline add up (every other list replaces) and become `--with`
+  flags right after a `uvx`, `uv tool run` or `uv run` command: `uvx --with 'dlt[snowflake,parquet]' --with 'dlt[http]'
+  --from 'cartage>=0.8.0' cartage`.
+- `default_args` merge by key, so the owner and email can be set once and overridden per pipeline.
+- Values are written into the DAG as Python literals. When `default_args` need Python (timedeltas, callbacks), point
+  `default_args_from` at a function that builds them; `default_args` become its keyword arguments.
+  `schedule_from` wraps the schedule the same way, e.g. to turn it off outside production:
+
+  ```yaml
+  default_args_from: orchestrate.utils.datacoves_utils:set_default_args
+  default_args: { owner: Noel Gomez, owner_email: noel@example.com }
+  schedule_from: orchestrate.utils.datacoves_utils:set_schedule
+  ```
+
+  renders `default_args = set_default_args(owner='Noel Gomez', owner_email='noel@example.com')` and
+  `schedule=set_schedule('0 3 * * *')`.
+- For anything else, a project template (`templates/airflow/dag.py.j2`, `{% extends "cartage/airflow_dag.py.j2" %}`)
+  can override the blocks `header`, `imports`, `default_args`, `schedule`, `dag`, `task` and `extra`.
 
 ### Airflow connections
 
@@ -382,11 +487,10 @@ variable, `prd` by default):
 
 ```yaml
 warehouse:
-  type: dlt
+  type: snowflake
   envs:
-    dev: { destination: snowflake, destination_name: datacoves_snowflake }   # ~/.dlt/secrets.toml locally
+    dev: { destination_name: datacoves_snowflake }   # credentials from ~/.dlt/secrets.toml locally
     prd:
-      destination: snowflake
       credentials:
         host: "${airflow:main_load_keypair.extra.account}"
         username: "${airflow:main_load_keypair.login}"
@@ -405,12 +509,12 @@ destinations, state store and options, in every environment) and passes them to 
 whose values are Airflow templates:
 
 ```python
-BashOperator(
-    task_id="cartage_run",
-    bash_command="cartage --project-dir ... run pipelines/loans.yaml --env {{ var.value.get('cartage_env', 'prd') }}",
+@task.bash(
     env={"CARTAGE_AIRFLOW__MAIN_LOAD_KEYPAIR__LOGIN": "{{ conn.get('main_load_keypair').login or '' }}", ...},
     append_env=True,
 )
+def cartage_run():
+    return "cartage --project-dir ... run pipelines/loans.yaml --env {{ var.value.get('cartage_env', 'prd') }}"
 ```
 
 **3. Airflow fills them in when the task runs**, from wherever it keeps connections (metadata database, a secrets
@@ -432,22 +536,34 @@ Notes:
 
 ## Batches
 
-- `batch` transforms see one source batch at a time (default 100 rows, `batch_size` source option), never across files.
+- `batch` transforms see one source batch at a time (default 100 rows, `batch_size` source option).
 - `commit: per_batch` commits each batch the engine hands to the destination (the dlt engine re-chunks at 100).
 - dlt destinations are not fed in batches: dlt extracts, normalizes and loads the whole run. Size its files and
   buffers with `dlt_config` (e.g. `data_writer.buffer_max_items`, `data_writer.file_max_items`).
 
 ## Secrets
 
-`${secret:sap.passwd}` reads `CARTAGE_SECRET__SAP__PASSWD`, then `.cartage/secrets.yaml`. `${env:VAR}` reads an
-environment variable. Resolved values are never printed.
+`${secret:sap.passwd}` reads `CARTAGE_SECRET__SAP__PASSWD`, then `.cartage/secrets.yaml` (git-ignored; the dots are
+nesting levels). `${env:VAR}` reads an environment variable. Resolved values are never printed.
+
+```yaml
+# .cartage/secrets.yaml
+sap: { user: rfc_user, passwd: "..." }
+snowflake: { connection_string: "snowflake://user:...@account/db?warehouse=wh&role=r" }
+```
+
+dlt destinations can also leave credentials out of `connections.yaml` entirely: dlt then reads its own
+`.dlt/secrets.toml` (in the working directory) or `~/.dlt/secrets.toml` (e.g. `destination_name: my_snowflake` reads
+`[destination.my_snowflake.credentials]`).
 
 `${airflow:<conn_id>.<field>}` reads a field of an Airflow connection inside DAGs from `cartage generate`; see
 [Airflow connections](#airflow-connections).
 
 ## State and rejects
 
-Incremental state is saved only when a run has no record errors (or with `--advance-state`). Rejected records
+Incremental state is saved only when a run has no record errors (or with `--advance-state`). It lives in
+`.cartage/state` unless `cartage.yaml` points an environment at a `filesystem` connection, e.g. on ephemeral Airflow
+workers: `state: { airflow: { connection: landing, prefix: cartage/state/ } }` (S3, GCS, Azure, ...). Rejected records
 go to `.cartage/rejects/<pipeline>/<run_id>.jsonl`. `cartage state show|reset <pipeline>` inspects or clears state.
 
 With several destinations, each destination is its own run named `<pipeline>__<name>`: state, rejects and the
@@ -598,11 +714,12 @@ source module (at import, or at the start of the source function), knowing they 
 Adapters are entry points in the groups `cartage.sources`, `cartage.destinations`, `cartage.engines` and
 `cartage.orchestrators`. `cartage plugins` lists what is installed.
 
-A destination is a record sink (`preview` + `write`, like SAP and `file`) by default. Optional: `finish(ok)` is called
+A destination is a record sink (`preview` + `write`, like `sap_bapi` and `file_export`) by default. Optional: `finish(ok)` is called
 after the run (to finalize or discard output), and `preview_label`/`preview_syntax` name and highlight `plan` output. To have the dlt engine load into it natively
 instead, expose `dlt_destination()` returning a dlt destination, plus `hints` (resource hints such as
-`write_disposition`), `dataset_name`, `loader_file_format` and `dlt_env` (env vars applied to the run), as the
-built-in `dlt` destination does.
+`write_disposition`), `dataset_name`, `loader_file_format` and `dlt_env` (env vars applied to the run), as the dlt
+destination adapter does. dlt destination names (`snowflake`, `filesystem`, ...) are reserved: a plug-in with one of
+those names is an error.
 
 ## License
 

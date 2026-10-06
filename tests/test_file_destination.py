@@ -24,13 +24,13 @@ def cli(project, *args):
 
 def write_pipeline(project, options, transforms="  - map: transforms.materials:normalize_uom\n"):
     (project / "pipelines/export.yaml").write_text(
-        "name: export\nsource:\n  connection: local_files\n  format: csv\n  path: materials/*.csv\n"
+        "name: export\nsource:\n  connection: local_files\n  format: csv\n  path: materials/*.csv\n  reader_options: { dtype: str }\n"
         f"transforms:\n{transforms}destination:\n  connection: exports\n{options}")
 
 
 def setup(project, options="", transforms="  - map: transforms.materials:normalize_uom\n"):
     connections = project / "connections.yaml"
-    connections.write_text(connections.read_text() + "\n  exports:\n    type: file\n    envs:\n      dev: { path: ./out }\n")
+    connections.write_text(connections.read_text() + "\n  exports:\n    type: file_export\n    envs:\n      dev: { path: ./out }\n")
     (project / "data/materials/materials.csv").write_text(MATERIALS)
     write_pipeline(project, options, transforms)
 

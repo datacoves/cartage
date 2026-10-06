@@ -22,7 +22,7 @@ def test_connections_list_shows_references_not_values(project, monkeypatch):
 def test_connections_test(project, monkeypatch):
     ok = cli(project, "connections", "test", "sap_erp")
     assert ok.exit_code == 0 and "mock (in-process)" in ok.output
-    assert "1 file" in cli(project, "connections", "test", "local_files").output
+    assert "(1 entry)" in cli(project, "connections", "test", "local_files").output
     monkeypatch.setenv("CARTAGE_SECRET__SAP__USER", "u")
     monkeypatch.setenv("CARTAGE_SECRET__SAP__PASSWD", "p")
     rfc = cli(project, "connections", "test", "sap_erp", "--env", "prd")
@@ -32,7 +32,7 @@ def test_connections_test(project, monkeypatch):
 def test_state_show_and_reset(project):
     cli(project, "run", "materials", "--engine", "python", "--advance-state", "--json")
     shown = cli(project, "state", "show", "materials")
-    assert shown.exit_code == 0 and "materials/materials.csv" in shown.output
+    assert shown.exit_code == 0 and '"last_run"' in shown.output
     assert cli(project, "state", "reset", "materials", "--yes").exit_code == 0
     assert json.loads(cli(project, "state", "show", "materials").output) == {"state": {}, "dlt_archive": False}
 

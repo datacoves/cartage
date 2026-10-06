@@ -34,10 +34,14 @@ class DltDestinationAdapter:
 
     def __init__(self, config: dict, options: dict, root: Path):
         settings = dict(config)
-        self.name = settings.pop("destination", None)
+        self.name = settings.pop("destination", None)  # the connection type, set by registry.destination_config
         if not self.name:
-            raise CartageError("A dlt destination connection needs 'destination'",
-                               hint="e.g. destination: filesystem, duckdb, postgres or snowflake")
+            raise CartageError("A dlt destination needs a destination name",
+                               hint="Use it as the connection type, e.g. type: snowflake")
+        if self.name == "filesystem":  # a local path is relative to the project, as for the filesystem source
+            from cartage.adapters.sources.filesystem import bucket_url
+
+            settings["bucket_url"] = bucket_url(settings, root)
         # Tuning: connection-level defaults, pipeline-level overrides.
         dataset = settings.pop("dataset_name", None)
         naming = options.get("naming") or settings.pop("naming", None)

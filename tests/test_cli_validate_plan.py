@@ -50,7 +50,6 @@ def test_plan_json_previews_payloads_without_state(project):
     result = cli(project, "plan", "materials", "--engine", "python", "--json")
     assert result.exit_code == 0, result.output
     data = json.loads(result.stdout)
-    assert data["files"] == [{"file": "materials/materials.csv", "process": True}]
     assert data["records"][2]["uom"] == "KGS"
     assert data["transformed"][2]["uom"] == "KG"
     assert data["payloads"][0]["HEADDATA"]["MATERIAL"] == "100001"

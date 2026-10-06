@@ -8,32 +8,41 @@ import os
 import shlex
 
 import pendulum
-from airflow import DAG
-from {{ operator_module }} import {{ operator_class }}
+from airflow.decorators import dag, task
 {% if image %}
 from kubernetes.client import models as k8s
 {% endif %}
+{% for function in [default_args_from, schedule_from] if function %}
+from {{ function[0] }} import {{ function[1] }}
+{% endfor %}
 {% endblock %}
 
 PROJECT_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), {{ project_dir | py }}))
 
 {% block default_args %}
+{% if default_args_from %}
+default_args = {{ default_args_from[1] }}({% for key, value in default_args.items() %}{{ key }}={{ value | py }}{{ ", " if not loop.last }}{% endfor %})
+{% else %}
 default_args = {{ default_args | py }}
+{% endif %}
 {% endblock %}
 
+
 {% block dag %}
-with DAG(
+@dag(
     dag_id={{ dag_id | py }},
-    schedule={% block schedule %}{{ schedule | py }}{% endblock %},
+    schedule={% block schedule %}{% if schedule_from %}{{ schedule_from[1] }}({{ schedule | py }}){% else %}{{ schedule | py }}{% endif %}{% endblock %},
     start_date=pendulum.datetime(2024, 1, 1, tz="UTC"),
     catchup={{ catchup | py }},
     tags={{ tags | py }},
     default_args=default_args,
-) as dag:
+)
+def {{ dag_function }}():
 {% block task %}
-    {{ operator_class }}(
-        task_id="cartage_run",
-        bash_command={{ command | py }} + " --project-dir " + shlex.quote(PROJECT_DIR) + " run " + {{ run_args | py }},
+{% if not (task_env or image or operator_args) %}
+    @task.{{ task_decorator }}
+{% else %}
+    @task.{{ task_decorator }}(
 {% if task_env %}
         env={{ task_env | py }},
         append_env=True,
@@ -45,7 +54,15 @@ with DAG(
         {{ key }}={{ value | py }},
 {% endfor %}
     )
+{% endif %}
+    def cartage_run():
+        return {{ command | py }} + " --project-dir " + shlex.quote(PROJECT_DIR) + " run " + {{ run_args | py }}
+
+    cartage_run()
 {% endblock %}
+
+
+{{ dag_function }}()
 {% endblock %}
 {% block extra %}
 {% endblock %}

@@ -17,20 +17,22 @@ def run(project, **kwargs):
 def test_demo_run_counts_and_rejects(project):
     result = run(project)
     assert (result.read, result.filtered, result.sent, result.ok, len(result.errors)) == (20, 2, 18, 16, 2)
-    assert {e.source for e in result.errors} == {"materials/materials.csv:9", "materials/materials.csv:15"}
+    assert {e.record["material"] for e in result.errors} == {"100008", "1000140000000000000001"}
     assert result.state_advanced is False
     assert not (project / STATE).exists()
     assert len(Path(result.rejects_path).read_text().splitlines()) == 2
 
 
 def test_advance_state_then_incremental_skip_then_full_refresh(project):
-    assert run(project, advance_state=True).state_advanced is True
-    state = json.loads((project / STATE).read_text())
-    assert list(state["files"]) == ["materials/materials.csv"]
-    assert state["last_run"]["errors"] == 2
-    again = run(project)
+    from conftest import incremental
+
+    incremental(project)
+    dlt = {"engine": "dlt"}
+    assert run_pipeline(prepare(load_project(project), "materials", **dlt), advance_state=True).state_advanced is True
+    assert json.loads((project / STATE).read_text())["last_run"]["errors"] == 2
+    again = run_pipeline(prepare(load_project(project), "materials", **dlt))
     assert (again.read, again.errors, again.state_advanced) == (0, [], True)
-    assert run(project, full_refresh=True).read == 20
+    assert run_pipeline(prepare(load_project(project), "materials", **dlt), full_refresh=True).read == 20
 
 
 def test_progress_callback_receives_running_totals(project):

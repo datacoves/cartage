@@ -239,7 +239,9 @@ class Project:
             raise CartageError(f"Connection '{name}' has no settings for environment '{env}' ({where})",
                                hint=f"Add envs.{env} to '{name}', or use one of: {', '.join(conn.envs)}")
         line = line_of(self.raw_connections, ("connections", name, "envs", env))
-        return conn.type, dict(conn.envs[env]), f"{CONNECTIONS_FILE}:{line or '?'}"
+        settings = dict(conn.envs[env])
+        ctype = settings.pop("type", conn.type)  # an environment may use another system, e.g. duckdb in dev
+        return ctype, settings, f"{CONNECTIONS_FILE}:{line or '?'}"
 
     def pipeline_files(self) -> list[Path]:
         folder = self.root / "pipelines"

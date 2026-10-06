@@ -35,10 +35,12 @@ def test_state_archive_keeps_no_loaded_data(project):
     import json
     import tarfile
 
+    from conftest import incremental
     from typer.testing import CliRunner
 
     from cartage.cli import app
 
+    incremental(project)
     (project / "data/materials/materials.csv").write_text(CLEAN_CSV)
     run = lambda: CliRunner().invoke(app, ["-C", str(project), "run", "materials", "--engine", "dlt", "--json"])
     first = run()

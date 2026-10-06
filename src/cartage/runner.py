@@ -40,7 +40,7 @@ def state_backend(project: Project, env: str, secrets: Secrets) -> StateBackend:
     cls = registry.connection_class(ctype)
     if not hasattr(cls, "state_backend"):
         raise CartageError(f"Connection '{cfg.connection}' ({ctype}) cannot store state",
-                           hint="Use a filesystem or s3 connection, or state: { path: ... }")
+                           hint="Use a filesystem connection, or state: { path: ... }")
     return cls.state_backend(secrets.resolve(conf, where), cfg.prefix, project.root)
 
 
@@ -64,20 +64,24 @@ def prepare(project: Project, pipeline_ref: str, env: str | None = None, engine:
         raise CartageError(f"{label}: has several destinations; prepare one of {', '.join(names)}, or use prepare_all")
     dest_spec = next(d for d in pipeline.destination_specs if destination in (None, d.key))
     dest_type, dest_conf, where = project.connection(dest_spec.connection, env)
-    dest_conf = secrets.resolve(dest_conf, where)
+    dest_conf = registry.destination_config(dest_type, secrets.resolve(dest_conf, where))
     dest_opts = secrets.resolve(dest_spec.options(), label)
-    dest_cls = registry.get("destinations", dest_type)
+    dest_cls = registry.destination_class(dest_type)
 
     engine_name = engine or pipeline.engine or project.config.defaults.engine
-    if source_type == "dlt" and source_opts.get("incremental") and engine_name != "dlt":
-        raise CartageError(f"{label}: dlt sources with 'incremental' need the dlt engine (current: {engine_name})",
+    if source_opts.get("incremental") and engine_name != "dlt":  # dlt keeps the cursor
+        raise CartageError(f"{label}: sources with 'incremental' need the dlt engine (current: {engine_name})",
                            hint="Set engine: dlt in the pipeline, or remove incremental")
     if hasattr(dest_cls, "dlt_destination") and engine_name != "dlt":
         raise CartageError(f"{label}: dlt destinations need the dlt engine (current: {engine_name})",
                            hint="Set engine: dlt in the pipeline, or in cartage.yaml defaults")
 
     steps = load_steps(pipeline.transforms, project.root)
+    if source_type in registry.NOT_CONNECTION_TYPES and spec.connection:
+        raise CartageError(f"{label}: '{spec.connection}' is a {source_type} connection; use ref: instead")
     source = registry.get("sources", source_type)(source_conf, source_opts, project.root)
+    if hasattr(source, "run_name"):  # e.g. the filesystem source's table name
+        source.run_name = pipeline.name
     destination = dest_cls(dest_conf, dest_opts, project.root)
     if getattr(destination, "dataset_name", "") is None:  # dlt destinations default to the pipeline, not the run name
         destination.dataset_name = pipeline.name
@@ -137,8 +141,8 @@ def run_pipeline(prep: Prepared, *, advance_state: bool = False, full_refresh: b
 
 
 def _connection_view(project: Project, name: str, env: str) -> dict:
-    conn = project.connections[name]
-    return {"connection": name, "type": conn.type, "config": conn.envs[env]}
+    ctype, config, _ = project.connection(name, env)
+    return {"connection": name, "type": ctype, "config": config}
 
 
 def preview(prep: Prepared, n: int = 3) -> dict:
@@ -151,8 +155,6 @@ def preview(prep: Prepared, n: int = 3) -> dict:
     destination = _connection_view(project, spec.connection, env)
     destination["options"] = {k: v for k, v in spec.options().items() if k not in ("mapping", "constants")}
     data = prep.store.read_data()
-    files = ([{"file": f, "process": p} for f, p in prep.source.plan_files(data)]
-             if hasattr(prep.source, "plan_files") else None)
     first = next(iter(prep.source.read(copy.deepcopy(data))), [])
     skipped: dict[int, str] = {}  # record index → why it has no output
     if all(step.kind != "batch" for step in prep.steps):  # map/filter only: pair each record with its own output
@@ -172,7 +174,7 @@ def preview(prep: Prepared, n: int = 3) -> dict:
         transformed, errors = out.records[:n], [e.message for e in out.errors[:n]]
         payloads = prep.destination.preview(transformed)
     return {"pipeline": pipeline.name, "env": env, "engine": prep.engine_name, "source": source,
-            "destination": destination, "files": files, "records": first[:n], "transformed": transformed,
+            "destination": destination, "records": first[:n], "transformed": transformed,
             "skipped": skipped, "payloads": payloads, "transform_errors": errors,
             "payload_label": getattr(prep.destination, "preview_label", "payload"),
             "payload_syntax": getattr(prep.destination, "preview_syntax", None)}

@@ -1,6 +1,7 @@
 import json
 
 import pytest
+from conftest import incremental
 from typer.testing import CliRunner
 
 from cartage.cli import app
@@ -22,8 +23,9 @@ def test_run_json(project, engine):
     assert data["state_advanced"] is False
 
 
-@pytest.mark.parametrize("engine", ENGINES)
-def test_incremental_flow(project, engine):
+def test_incremental_flow(project):  # incremental file reads need the dlt engine
+    incremental(project)
+    engine = "dlt"
     assert json.loads(run(project, "--engine", engine, "--json", "--advance-state").stdout)["state_advanced"]
     second = run(project, "--engine", engine, "--json")
     assert second.exit_code == 0 and json.loads(second.stdout)["read"] == 0
@@ -38,7 +40,6 @@ def test_rich_summary(project, engine):
     assert result.exit_code == 1
     assert "completed with 2 record error(s)" in result.output
     assert "Value 'ZXX' is not allowed for HEADDATA-MATL_TYPE" in result.output
-    assert "materials/materials.csv:9" in result.output
     assert "state not advanced" in result.output
 
 
@@ -76,11 +77,12 @@ def test_unreachable_mock_server_exits_3(project, engine):
 
 
 def test_unexpected_engine_error_exits_3_without_traceback(project):
-    with open(project / "data/materials/materials.csv", "a") as f:
-        f.write("100030,M,FERT," + "x" * 140_000 + ",EA,active\n")
+    (project / "boom_src.py").write_text("import dlt\n\n\n@dlt.resource\ndef rows():\n    raise RuntimeError('kaboom')\n    yield\n")
+    pipeline = project / "pipelines/materials.yaml"
+    pipeline.write_text(pipeline.read_text().replace("  connection: local_files\n", "  ref: boom_src:rows\n"))
     result = run(project, "--engine", "python")
     assert result.exit_code == 3, result.output
-    assert "Run failed: Error:" in result.output and "Traceback" not in result.output
+    assert "Run failed:" in result.output and "kaboom" in result.output and "Traceback" not in result.output
 
 
 def test_run_from_subdirectory_by_name(project, monkeypatch):

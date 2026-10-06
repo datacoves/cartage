@@ -16,7 +16,7 @@ connections:
   local_files:
     type: filesystem
     envs:
-      dev: { path: ./data }
+      dev: { bucket_url: ./data }
 """
 
 PIPELINE = """\
@@ -141,11 +141,20 @@ def test_pipeline_not_found_lists_names(root):
 
 def test_connection_lookup(root):
     project = load_project(root)
-    assert project.connection("local_files", "dev") == ("filesystem", {"path": "./data"}, "connections.yaml:5")
+    assert project.connection("local_files", "dev") == ("filesystem", {"bucket_url": "./data"}, "connections.yaml:5")
     with pytest.raises(CartageError, match="no settings for environment 'prd'"):
         project.connection("local_files", "prd")
     with pytest.raises(CartageError, match="Unknown connection 'sap_erp'"):
         project.connection("sap_erp", "dev")
+
+
+def test_an_environment_can_override_the_type(root):
+    (root / "connections.yaml").write_text(
+        "connections:\n  warehouse:\n    type: snowflake\n    envs:\n"
+        "      dev: { type: duckdb, credentials: dev.duckdb }\n      prd: { database: raw }\n")
+    project = load_project(root)
+    assert project.connection("warehouse", "dev")[:2] == ("duckdb", {"credentials": "dev.duckdb"})
+    assert project.connection("warehouse", "prd")[:2] == ("snowflake", {"database": "raw"})
 
 
 def test_unknown_env(root):

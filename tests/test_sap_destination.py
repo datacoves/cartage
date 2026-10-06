@@ -7,8 +7,8 @@ from cartage.core import CartageError
 
 OPTIONS = {
     "bapi": "BAPI_MATERIAL_SAVEDATA",
-    "mapping": {"material": "HEADDATA.MATERIAL", "industry": "HEADDATA.IND_SECTOR", "type": "HEADDATA.MATL_TYPE",
-                "uom": "CLIENTDATA.BASE_UOM"},
+    "mapping": {"HEADDATA.MATERIAL": "material", "HEADDATA.IND_SECTOR": "industry", "HEADDATA.MATL_TYPE": "type",
+                "CLIENTDATA.BASE_UOM": "uom"},
 }
 GOOD = {"material": "100001", "industry": "M", "type": "FERT", "uom": "EA", "_source": "m.csv:2"}
 BAD = {"material": "100002", "industry": "M", "type": "ZXX", "uom": "EA", "_source": "m.csv:3"}
@@ -62,7 +62,7 @@ def test_preview_has_no_side_effects():
 
 def test_option_errors():
     with pytest.raises(CartageError, match="needs 'bapi'"):
-        SapDestination({"transport": "mock"}, {"mapping": {"a": "HEADDATA.MATERIAL"}}, Path("."))
+        SapDestination({"transport": "mock"}, {"mapping": {"HEADDATA.MATERIAL": "a"}}, Path("."))
     with pytest.raises(CartageError, match="needs a 'mapping'"):
         SapDestination({"transport": "mock"}, {"bapi": "BAPI_MATERIAL_SAVEDATA"}, Path("."))
     with pytest.raises(CartageError, match="Unknown commit mode 'always'"):

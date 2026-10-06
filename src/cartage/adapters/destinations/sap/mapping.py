@@ -34,13 +34,15 @@ def to_sap(value: Any) -> str:
 
 class Mapping:
     def __init__(self, fields: dict[str, str], constants: dict[str, Any], meta: BapiMeta):
+        """fields and constants are both keyed by BAPI target: {target: record field} and {target: value}."""
         self.meta = meta
         problems: list[str] = []
-        self.fields = [(src, self._target(tgt, problems)) for src, tgt in fields.items()]
+        self.fields = [(src, self._target(tgt, problems)) for tgt, src in fields.items()]
         self.constants = [(self._target(tgt, problems), value) for tgt, value in constants.items()]
         if problems:
             raise CartageError(f"Invalid mapping for {meta.function}:\n" + "\n".join(f"  - {p}" for p in problems),
-                               hint=f"Parameters: {', '.join(meta.parameters)}")
+                               hint="mapping and constants are keyed by BAPI parameter (HEADDATA.MATERIAL: material); "
+                                    f"parameters: {', '.join(meta.parameters)}")
 
     def _target(self, text: str, problems: list[str]) -> Target | None:
         t = parse_target(text)

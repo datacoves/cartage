@@ -17,6 +17,16 @@ import dlt
 def materials(prefix=""):
     rows = json.loads((Path(__file__).parent / "rows.json").read_text())
     yield [dict(r, material=prefix + r["material"]) for r in rows]
+
+
+@dlt.resource(name="noise")
+def noise():
+    yield [{"material": "X" * 40}]  # too long for SAP: fails if this resource is read
+
+
+@dlt.source
+def erp():
+    return materials(), noise()
 """
 
 PIPELINE = """\
@@ -31,10 +41,10 @@ destination:
   connection: sap_erp
   bapi: BAPI_MATERIAL_SAVEDATA
   mapping:
-    material: HEADDATA.MATERIAL
-    industry: HEADDATA.IND_SECTOR
-    type: HEADDATA.MATL_TYPE
-    uom: CLIENTDATA.BASE_UOM
+    HEADDATA.MATERIAL: material
+    HEADDATA.IND_SECTOR: industry
+    HEADDATA.MATL_TYPE: type
+    CLIENTDATA.BASE_UOM: uom
 """
 
 
@@ -95,3 +105,20 @@ def test_ref_without_type_runs_as_a_dlt_source(project):
     result = run(project)
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)["read"] == 3
+
+
+def test_resources_selects_from_a_source(project):
+    setup(project, PIPELINE.replace("erp_sources.legacy:materials", "erp_sources.legacy:erp")
+          .replace('  with: { prefix: "" }\n', "  resources: [erp_materials]\n"))
+    result = run(project)
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["read"] == 3
+
+
+def test_unknown_resource_is_rejected(project):
+    setup(project, PIPELINE.replace("erp_sources.legacy:materials", "erp_sources.legacy:erp")
+          .replace('  with: { prefix: "" }\n', "  resources: [nope]\n"))
+    result = runner.invoke(app, ["-C", str(project), "run", "erp"])
+    assert result.exit_code == 2
+    assert "has no resource(s): nope" in result.output
+    assert "erp_materials, noise" in result.output

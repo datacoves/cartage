@@ -24,6 +24,9 @@ class DltSourceAdapter:
         self.kwargs = options.get("with") or {}
         if not isinstance(self.kwargs, Mapping):
             raise CartageError("dlt source 'with' must be a mapping of factory keyword arguments")
+        self.resources = options.get("resources") or []
+        if not isinstance(self.resources, list) or not all(isinstance(r, str) for r in self.resources):
+            raise CartageError("dlt source 'resources' must be a list of resource names", hint="e.g. resources: [read_csv]")
         self.incremental = options.get("incremental") or None
         if self.incremental is not None and not (isinstance(self.incremental, dict) and "cursor" in self.incremental):
             raise CartageError("dlt source 'incremental' must be a mapping with 'cursor'",
@@ -47,8 +50,16 @@ class DltSourceAdapter:
         except Exception as e:
             raise CartageError(f"Calling '{self.ref}' failed: {type(e).__name__}: {e}") from e
         if isinstance(obj, DltSource):
-            return list(obj.selected_resources.values())
+            if not self.resources:
+                return list(obj.selected_resources.values())
+            missing = [r for r in self.resources if r not in obj.resources]
+            if missing:
+                raise CartageError(f"'{self.ref}' has no resource(s): {', '.join(missing)}",
+                                   hint=f"Resources: {', '.join(obj.resources)}")
+            return [obj.resources[r] for r in self.resources]
         if isinstance(obj, DltResource):
+            if self.resources and self.resources != [obj.name]:
+                raise CartageError(f"'{self.ref}' returns the single resource '{obj.name}'; drop 'resources'")
             return [obj]
         raise CartageError(f"'{self.ref}' returned {type(obj).__name__}, expected a dlt source or resource")
 

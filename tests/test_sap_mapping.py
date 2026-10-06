@@ -7,10 +7,10 @@ from cartage.adapters.destinations.sap.meta import load_meta
 from cartage.core import CartageError
 
 FIELDS = {
-    "material": "HEADDATA.MATERIAL",
-    "type": "HEADDATA.MATL_TYPE",
-    "description": "MATERIALDESCRIPTION[].MATL_DESC",
-    "uom": "CLIENTDATA.BASE_UOM",
+    "HEADDATA.MATERIAL": "material",
+    "HEADDATA.MATL_TYPE": "type",
+    "MATERIALDESCRIPTION[].MATL_DESC": "description",
+    "CLIENTDATA.BASE_UOM": "uom",
 }
 CONSTANTS = {"MATERIALDESCRIPTION[].LANGU_ISO": "EN", "HEADDATA.BASIC_VIEW": "X"}
 
@@ -53,7 +53,7 @@ def test_to_sap(value, expected):
 
 
 def test_all_bad_targets_reported_together():
-    bad = {"a": "HEADDATA.NOPE", "b": "NOPARAM.X", "c": "MATERIALDESCRIPTION.MATL_DESC", "d": "HEADDATA[].MATERIAL", "e": "lowercase"}
+    bad = {"HEADDATA.NOPE": "a", "NOPARAM.X": "b", "MATERIALDESCRIPTION.MATL_DESC": "c", "HEADDATA[].MATERIAL": "d", "lowercase": "e"}
     with pytest.raises(CartageError) as info:
         Mapping(bad, {}, load_meta("BAPI_MATERIAL_SAVEDATA"))
     message = info.value.message
