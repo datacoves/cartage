@@ -102,6 +102,7 @@ class AirflowOrchestrator:
     def task_env(self, project, pipeline, s: dict) -> dict[str, str]:
         """task_env plus every ${airflow:...} the pipeline's connections use (any env), rendered by Airflow at run time."""
         names = {pipeline.source.connection, *(d.connection for d in pipeline.destination_specs),
+                 *(pipeline.source_for(e).connection for e in project.config.environments),
                  *(c.connection for c in project.config.state.values())} - {None}
         scanned = [project.connections[n].envs for n in sorted(names) if n in project.connections]
         refs = references([*scanned, pipeline.model_dump(mode="json", by_alias=True)], "airflow")

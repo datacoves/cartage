@@ -67,6 +67,7 @@ class SourceSpec(BaseModel):
     connection: str | None = None
     type: str | None = None
     incremental: bool | dict[str, Any] = False
+    envs: dict[str, dict[str, Any]] = Field(default_factory=dict)  # env → a whole source used instead in that env
 
     @model_validator(mode="after")
     def _connection_or_type(self):
@@ -77,7 +78,7 @@ class SourceSpec(BaseModel):
         return self
 
     def options(self) -> dict[str, Any]:
-        return self.model_dump(exclude={"connection", "type"})
+        return self.model_dump(exclude={"connection", "type", "envs"})
 
 
 class TransformSpec(BaseModel):
@@ -142,6 +143,17 @@ class Pipeline(BaseModel):
     @property
     def destination_specs(self) -> list[DestinationSpec]:
         return [self.destination] if self.destination is not None else self.destinations
+
+    def source_for(self, env: str) -> SourceSpec:
+        """The source in `env`: the one `source.envs` gives that environment, else the pipeline's."""
+        replacement = self.source.envs.get(env)
+        if replacement is None:
+            return self.source
+        try:
+            return SourceSpec.model_validate(replacement)
+        except ValidationError as e:
+            problems = "; ".join(f"{'.'.join(map(str, err['loc'])) or '(root)'}: {err['msg']}" for err in e.errors())
+            raise CartageError(f"source.envs.{env}: {problems}") from e
 
     def run_names(self) -> dict[str, str]:
         """Destination key (name, else connection) → run name. Each destination of a multi-destination pipeline is its

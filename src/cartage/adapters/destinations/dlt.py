@@ -42,6 +42,10 @@ class DltDestinationAdapter:
             from cartage.adapters.sources.filesystem import bucket_url
 
             settings["bucket_url"] = bucket_url(settings, root)
+        credentials = settings.get("credentials")
+        if self.name == "duckdb" and isinstance(credentials, str) and credentials != ":memory:" \
+                and "://" not in credentials and not Path(credentials).is_absolute():
+            settings["credentials"] = str((Path(root) / credentials).resolve())  # project-relative, like bucket_url
         # Tuning: connection-level defaults, pipeline-level overrides.
         dataset = settings.pop("dataset_name", None)
         naming = options.get("naming") or settings.pop("naming", None)

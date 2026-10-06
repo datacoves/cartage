@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from cartage import registry
-from cartage.config import DestinationSpec, Pipeline, Project, StateConfig
+from cartage.config import DestinationSpec, Pipeline, Project, SourceSpec, StateConfig
 from cartage.core import CartageError, FatalRunError, RunResult, StateBackend
 from cartage.secrets import Secrets
 from cartage.state import LocalStateBackend, StateStore, new_run_id, write_rejects
@@ -30,6 +30,7 @@ class Prepared:
     store: StateStore
     name: str  # run name: the pipeline name, plus the destination when there are several
     destination_spec: DestinationSpec
+    source_spec: SourceSpec
 
 
 def state_backend(project: Project, env: str, secrets: Secrets) -> StateBackend:
@@ -51,7 +52,7 @@ def prepare(project: Project, pipeline_ref: str, env: str | None = None, engine:
     label = project.rel(pipeline.path)
     secrets = Secrets(project.root)
 
-    spec = pipeline.source
+    spec = pipeline.source_for(env)
     if spec.connection:
         source_type, source_conf, where = project.connection(spec.connection, env)
         source_conf = secrets.resolve(source_conf, where)
@@ -91,7 +92,7 @@ def prepare(project: Project, pipeline_ref: str, env: str | None = None, engine:
     name = names[dest_spec.key]
     store = StateStore(state_backend(project, env, secrets), name, env)
     return Prepared(project, pipeline, env, source_type, dest_type, engine_name, source, destination, engine_obj, steps,
-                    store, name, dest_spec)
+                    store, name, dest_spec, spec)
 
 
 def prepare_all(project: Project, pipeline_ref: str, env: str | None = None, engine: str | None = None) -> list[Prepared]:
@@ -148,7 +149,7 @@ def _connection_view(project: Project, name: str, env: str) -> dict:
 def preview(prep: Prepared, n: int = 3) -> dict:
     """Dry run: first batch through transforms and mapping. Reads state, never writes it."""
     project, pipeline, env = prep.project, prep.pipeline, prep.env
-    spec = pipeline.source
+    spec = prep.source_spec
     source = _connection_view(project, spec.connection, env) if spec.connection else {"type": spec.type}
     source["options"] = spec.options()
     spec = prep.destination_spec
