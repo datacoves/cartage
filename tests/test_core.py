@@ -17,7 +17,7 @@ runner = CliRunner()
 def test_version():
     result = runner.invoke(app, ["--version"])
     assert result.exit_code == 0
-    assert "cartage 0.9.0" in result.output
+    assert "cartage 0.10.0" in result.output
 
 
 def _app_raising(error, debug=False):
