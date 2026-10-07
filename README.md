@@ -97,6 +97,25 @@ Cartage needs Python 3.11.4 or newer. dlt is included; extras add the rest.
 
 Generating Airflow, Dagster or Prefect files needs nothing extra; the orchestrator itself runs them.
 
+### Dependencies
+
+A pipeline can list the packages it needs, and `.cartage/config.yaml` the ones every pipeline needs:
+
+```yaml
+# .cartage/config.yaml
+defaults:
+  dependencies: ["dlt[snowflake,parquet]"]
+
+# pipelines/loans.yaml
+dependencies: ["dlt[http]"]           # reads CSVs over https://
+```
+
+`cartage run`, `plan`, `validate`, `state` and `connections test` then run again under
+`uv run --with <dependencies>`, like a script with inline dependencies: uv builds the environment once, caches it
+(well under a second after that), and layers it on the Python running Cartage, so nothing is installed into it. The
+same works on a laptop and in an Airflow task, as long as [uv](https://docs.astral.sh/uv/) is on `PATH`.
+`--no-deps` (or `CARTAGE_NO_DEPS=1`) uses the installed packages instead.
+
 ## Engines
 
 The engine runs a pipeline: it reads from the source, applies your transforms, and hands records to the destination.
@@ -452,7 +471,7 @@ schedule:
 
 | Target  | Output (default)                        | Settings                                                                    | Environment at run time  |
 | ------- | --------------------------------------- | --------------------------------------------------------------------------- | ------------------------ |
-| airflow | `dags/<dag_id>.py`                      | `dags_dir`, `schedule`, `tags`, `default_args`, `task_decorator`, `operator_args`, `dependencies`, `task_env`, `image`, ... | Airflow var `cartage_env` |
+| airflow | `dags/<dag_id>.py`                      | `dags_dir`, `schedule`, `tags`, `default_args`, `task_decorator`, `operator_args`, `task_env`, `image`, ... | Airflow var `cartage_env` |
 | dagster | `orchestration/dagster/<name>.py`       | `out_dir`, `name`, `schedule`, `timezone`, `tags`, `env`, `command`, `project_dir` | `CARTAGE_ENV` env var  |
 | prefect | `orchestration/prefect/<name>.py`       | `out_dir`, `name`, `schedule`, `retries`, `tags`, `env`, `command`, `project_dir`  | `CARTAGE_ENV` env var  |
 
@@ -463,7 +482,7 @@ schedule:
 - `env` defaults to `prd`; `command` (default `cartage`) may include a launcher, e.g. `uv run cartage`.
 - **Airflow:** DAGs use the TaskFlow API (`@dag`, `@task.bash`). `task_decorator` picks the task decorator, e.g.
   `datacoves_bash` for `@task.datacoves_bash`; `operator_args` are its keyword arguments. `task_env` adds
-  environment variables to the task (e.g. `UV_CACHE_DIR`). See [Airflow settings](#airflow-settings) for packages,
+  environment variables to the task (e.g. `UV_CACHE_DIR`). See [Airflow settings](#airflow-settings) for
   owner/email and functions that build `default_args` or the schedule.
 
 ### Airflow settings
@@ -473,21 +492,18 @@ schedule:
 orchestrators:
   airflow:
     task_decorator: datacoves_bash
-    command: uvx --from "cartage>=0.8.0" cartage
-    dependencies: ["dlt[snowflake,parquet]"]                  # every DAG
+    command: uvx --from "cartage>=0.11.0" cartage
     default_args: { owner: data-team, email: [data@example.com], retries: 1 }
 
 # pipelines/loans.yaml
 schedule:
   airflow:
     schedule: "0 3 * * *"
-    dependencies: ["dlt[http]"]                               # only this DAG
     default_args: { owner: Noel Gomez, email: [noel@example.com] }
 ```
 
-- `dependencies` from `.cartage/config.yaml` and the pipeline add up (every other list replaces) and become `--with`
-  flags right after a `uvx`, `uv tool run` or `uv run` command: `uvx --with 'dlt[snowflake,parquet]' --with 'dlt[http]'
-  --from 'cartage>=0.8.0' cartage`.
+- Packages are not an Airflow setting: the DAG runs `cartage run`, which adds the pipeline's
+  [dependencies](#dependencies) itself.
 - `default_args` merge by key, so the owner and email can be set once and overridden per pipeline.
 - Values are written into the DAG as Python literals. When `default_args` need Python (timedeltas, callbacks), point
   `default_args_from` at a function that builds them; `default_args` become its keyword arguments.

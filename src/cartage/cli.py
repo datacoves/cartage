@@ -3,6 +3,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import shutil
+import subprocess
+import sys
 from dataclasses import asdict
 from pathlib import Path
 
@@ -90,6 +94,29 @@ def init(
 EnvOption = typer.Option(None, "--env", "-e", help="Environment (default: default_env).")
 EngineOption = typer.Option(None, "--engine", help="Override the pipeline's engine.")
 JsonOption = typer.Option(False, "--json", help="Print machine-readable JSON.")
+NoDepsOption = typer.Option(False, "--no-deps", envvar="CARTAGE_NO_DEPS",
+                            help="Use the packages already installed instead of adding the pipelines' dependencies.")
+
+
+def _with_dependencies(project, refs: list[str], no_deps: bool) -> None:
+    """Run this command again under `uv run --with <dependencies>` when the pipelines declare any, like a PEP 723
+    script: uv caches the environment and layers it on this one, so nothing is installed here."""
+    deps = list(project.config.defaults.dependencies)
+    for ref in refs:
+        try:
+            deps += project.load_pipeline(ref).dependencies
+        except CartageError:
+            continue  # the command itself reports an invalid pipeline
+    deps = list(dict.fromkeys(deps))
+    if not deps or no_deps:
+        return
+    uv = shutil.which("uv")
+    if uv is None:
+        raise CartageError(f"Needs {', '.join(deps)}, which Cartage adds with uv, and uv is not on PATH",
+                           hint="Install uv (https://docs.astral.sh/uv/), or install the packages and pass --no-deps")
+    command = [uv, "run", "--no-project", "--python", sys.executable, *(w for d in deps for w in ("--with", d)),
+               "python", "-m", "cartage", *sys.argv[1:]]
+    raise typer.Exit(subprocess.run(command, env={**os.environ, "CARTAGE_NO_DEPS": "1"}, check=False).returncode)
 
 
 @app.command()
@@ -100,11 +127,14 @@ def run(
     advance_state: bool = typer.Option(False, "--advance-state", help="Save state even if records failed."),
     full_refresh: bool = typer.Option(False, "--full-refresh", help="Start from scratch: dlt destinations drop their tables and state; others ignore stored state."),
     as_json: bool = JsonOption,
+    no_deps: bool = NoDepsOption,
 ) -> None:
     """Run a pipeline (once per destination, in order; stops at the first fatal error)."""
     failed = False
     with ui.handle_errors(OPTS.debug):
-        for prep in prepare_all(load_project(OPTS.project_dir), pipeline, env, engine):
+        project = load_project(OPTS.project_dir)
+        _with_dependencies(project, [pipeline], no_deps)
+        for prep in prepare_all(project, pipeline, env, engine):
             try:
                 if as_json:
                     result = run_pipeline(prep, advance_state=advance_state, full_refresh=full_refresh)
@@ -132,11 +162,13 @@ def validate(
     pipelines: list[str] | None = typer.Argument(None, help="Pipelines to check (default: all)."),
     env: str | None = EnvOption,
     as_json: bool = JsonOption,
+    no_deps: bool = NoDepsOption,
 ) -> None:
     """Check pipelines, connections, secrets, transforms and mappings without moving data."""
     with ui.handle_errors(OPTS.debug):
         project = load_project(OPTS.project_dir)
         refs = pipelines or [str(p) for p in project.pipeline_files()]
+        _with_dependencies(project, refs, no_deps)
         results = [check_pipeline(project, ref, env) for ref in refs]
     if as_json:
         typer.echo(json.dumps([{"pipeline": name, "checks": [asdict(c) for c in checks]} for name, checks in results]))
@@ -153,10 +185,13 @@ def plan(
     engine: str | None = EngineOption,
     n: int = typer.Option(3, "-n", help="Number of records to preview."),
     as_json: bool = JsonOption,
+    no_deps: bool = NoDepsOption,
 ) -> None:
     """Dry run: show files to process and the first records before/after transforms and as BAPI payloads."""
     with ui.handle_errors(OPTS.debug):
-        previews = [preview(prep, n) for prep in prepare_all(load_project(OPTS.project_dir), pipeline, env, engine)]
+        project = load_project(OPTS.project_dir)
+        _with_dependencies(project, [pipeline], no_deps)
+        previews = [preview(prep, n) for prep in prepare_all(project, pipeline, env, engine)]
     if as_json:
         typer.echo(json.dumps(previews[0] if len(previews) == 1 else previews, default=str))
     else:
@@ -180,10 +215,12 @@ def connections_list(env: str | None = EnvOption) -> None:
 
 
 @connections_app.command("test")
-def connections_test(name: str = typer.Argument(..., help="Connection name."), env: str | None = EnvOption) -> None:
+def connections_test(name: str = typer.Argument(..., help="Connection name."), env: str | None = EnvOption,
+                     no_deps: bool = NoDepsOption) -> None:
     """Check that a connection is reachable."""
     with ui.handle_errors(OPTS.debug):
         project = load_project(OPTS.project_dir)
+        _with_dependencies(project, [str(p) for p in project.pipeline_files()], no_deps)
         env = project.resolve_env(env)
         ctype, config, where = project.connection(name, env)
         config = Secrets(project.root, env=env).resolve(config, where)
@@ -207,17 +244,20 @@ def _read_by_a_pipeline(project, name: str, env: str) -> bool:
     return False
 
 
-def _stores(pipeline: str, env: str | None) -> tuple[dict, str, str]:
+def _stores(pipeline: str, env: str | None, no_deps: bool) -> tuple[dict, str, str]:
     """State stores by run name: one per destination."""
-    preps = prepare_all(load_project(OPTS.project_dir), pipeline, env)
+    project = load_project(OPTS.project_dir)
+    _with_dependencies(project, [pipeline], no_deps)  # dlt destinations read their state with the driver
+    preps = prepare_all(project, pipeline, env)
     return {p.name: p.store for p in preps}, preps[0].pipeline.name, preps[0].env
 
 
 @state_app.command("show")
-def state_show(pipeline: str = typer.Argument(..., help="Pipeline file or name."), env: str | None = EnvOption) -> None:
+def state_show(pipeline: str = typer.Argument(..., help="Pipeline file or name."), env: str | None = EnvOption,
+               no_deps: bool = NoDepsOption) -> None:
     """Show stored state (processed files, dlt archive, last run)."""
     with ui.handle_errors(OPTS.debug):
-        stores, _, _ = _stores(pipeline, env)
+        stores, _, _ = _stores(pipeline, env, no_deps)
         shown = {name: store.show() for name, store in stores.items()}
         typer.echo(json.dumps(next(iter(shown.values())) if len(shown) == 1 else shown, indent=2, default=str))
 
@@ -227,10 +267,11 @@ def state_reset(
     pipeline: str = typer.Argument(..., help="Pipeline file or name."),
     env: str | None = EnvOption,
     yes: bool = typer.Option(False, "--yes", "-y", help="Do not ask for confirmation."),
+    no_deps: bool = NoDepsOption,
 ) -> None:
     """Delete stored state so the next run starts from scratch (every destination)."""
     with ui.handle_errors(OPTS.debug):
-        stores, name, env = _stores(pipeline, env)
+        stores, name, env = _stores(pipeline, env, no_deps)
     if not yes and not typer.confirm(f"Delete stored state for {name} ({env})?"):
         ui.console.print("cancelled")
         raise typer.Exit(0)

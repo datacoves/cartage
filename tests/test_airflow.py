@@ -238,22 +238,12 @@ def test_old_operator_setting_points_to_task_decorator(project):
     assert "operator was replaced by task_decorator" in result.output
 
 
-def test_dependencies_add_up_and_become_uv_with_flags(project):
-    settings = project / ".cartage/config.yaml"
-    settings.write_text(settings.read_text().replace(
-        "    dags_dir: dags\n",
-        '    dags_dir: dags\n    command: uvx --from "cartage>=0.7" cartage\n    dependencies: ["dlt[snowflake]", pandas]\n'))
-    _edit_pipeline(project, "    dependencies: [pandas, pyarrow]\n")
-    content = generate(project)
-    compile(content, DAG, "exec")
-    assert "return \"uvx --with 'dlt[snowflake]' --with pandas --with pyarrow --from 'cartage>=0.7' cartage\" + " in content
-
-
-def test_dependencies_need_a_uv_command(project):
+def test_airflow_dependencies_moved_to_the_pipeline(project):
     _edit_pipeline(project, "    dependencies: [pandas]\n")
     result = cli(project, "generate")
     assert result.exit_code == 2
-    assert "Airflow dependencies need a uv command" in result.output
+    assert "Unknown Airflow setting(s): dependencies" in result.output
+    assert "dependencies moved to the pipeline" in result.output
 
 
 def test_default_args_and_schedule_from_functions(project):

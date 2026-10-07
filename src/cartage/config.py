@@ -21,6 +21,7 @@ CONNECTIONS_FILE = ".cartage/connections.yaml"
 class Defaults(BaseModel):
     model_config = ConfigDict(extra="forbid")
     engine: str = "dlt"  # python: the dependency-free reference engine, for tests and framework work
+    dependencies: list[str] = Field(default_factory=list)  # packages every pipeline needs, e.g. dlt[snowflake]
 
 
 class StateConfig(BaseModel):
@@ -126,6 +127,7 @@ class Pipeline(BaseModel):
     destination: DestinationSpec | None = None
     destinations: list[DestinationSpec] = Field(default_factory=list)
     engine: str | None = None
+    dependencies: list[str] = Field(default_factory=list)  # packages this pipeline needs; cartage adds them with uv
     schedule: dict[str, dict[str, Any]] = Field(default_factory=dict)
     path: Path | None = Field(default=None, exclude=True)
 

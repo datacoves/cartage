@@ -90,3 +90,33 @@ def test_run_from_subdirectory_by_name(project, monkeypatch):
     result = runner.invoke(app, ["run", "materials", "--engine", "python", "--json"])
     assert result.exit_code == 1
     assert json.loads(result.stdout)["read"] == 20
+
+
+def test_dependencies_run_the_command_again_under_uv(project, monkeypatch):
+    config = project / ".cartage/config.yaml"
+    config.write_text(config.read_text().replace("  engine: dlt\n", '  engine: dlt\n  dependencies: ["dlt[http]"]\n'))
+    pipeline = project / "pipelines/materials.yaml"
+    pipeline.write_text(pipeline.read_text() + "dependencies: [pandas, \"dlt[http]\"]\n")
+    calls = []
+    monkeypatch.setattr("cartage.cli.shutil.which", lambda name: "/bin/uv")
+    monkeypatch.setattr("cartage.cli.subprocess.run",
+                        lambda cmd, env, check: calls.append((cmd, env)) or type("R", (), {"returncode": 5}))
+    monkeypatch.setattr("sys.argv", ["cartage", "run", "materials", "--json"])
+    monkeypatch.delenv("CARTAGE_NO_DEPS", raising=False)
+
+    assert run(project, "--json").exit_code == 5  # the exit code of the run under uv
+    (cmd, env), = calls
+    assert cmd[:4] == ["/bin/uv", "run", "--no-project", "--python"]
+    assert cmd[5:] == ["--with", "dlt[http]", "--with", "pandas", "python", "-m", "cartage", "run", "materials", "--json"]
+    assert env["CARTAGE_NO_DEPS"] == "1"  # the run under uv does not start again
+
+    assert run(project, "--no-deps", "--engine", "python", "--json").exit_code == 1  # record errors, no uv
+    monkeypatch.setenv("CARTAGE_NO_DEPS", "1")
+    assert run(project, "--engine", "python", "--json").exit_code == 1
+    assert len(calls) == 1
+
+    monkeypatch.delenv("CARTAGE_NO_DEPS")
+    monkeypatch.setattr("cartage.cli.shutil.which", lambda name: None)
+    result = run(project)
+    assert result.exit_code == 2
+    assert "uv is not on PATH" in result.output and "--no-deps" in result.output
