@@ -335,8 +335,7 @@ def scaffold_command(
     kind: str = typer.Argument(..., help=f"What to write: {', '.join(KINDS)}."),
     name: str | None = typer.Argument(None, help="Module name, for transform and source."),
 ) -> None:
-    """Write a file to edit: an orchestrator template override (every block, rendering the default until changed),
-    or a transform or source module with examples."""
+    """Write a file to edit: a template override for generated files, or a transform or source module."""
     with ui.handle_errors(OPTS.debug):
         project = load_project(OPTS.project_dir)
         written = scaffold(project.root, kind, name)
