@@ -81,6 +81,15 @@ def test_project_template_override_extends_blocks(project):
     assert content.rstrip().endswith("# custom footer for materials")
 
 
+def test_sink_pipelines_need_remote_state_on_the_orchestrator(project):
+    config = project / "cartage.yaml"
+    config.write_text(config.read_text().replace("prd: {connection: landing, prefix: cartage/state/}",
+                                                 "prd: {path: .cartage/state}"))
+    result = cli(project, "generate")
+    assert result.exit_code == 2
+    assert "env 'prd' keeps that state on local disk" in result.output
+
+
 def test_check_detects_stale_files(project):
     generate(project)
     assert cli(project, "generate", "--check").exit_code == 0

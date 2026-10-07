@@ -277,7 +277,8 @@ Full reference for every type: [docs/connections.md](docs/connections.md).
 A `filesystem` source reads every file matching `path` with dlt's typed readers (pandas for CSV), so numbers arrive as
 numbers. `reader_options` go to the reader, e.g. `{ dtype: str, keep_default_na: false }` to keep codes such as
 `000123` as text and empty cells as `""`. With `incremental: true` only files modified since the last run are read
-(a changed file is read again in full). The same connection can be a destination (a dlt data lake) and a state store.
+(a changed file is read again in full). The same connection can be a destination (a dlt data lake) and the state
+store for SAP and file export pipelines.
 
 A dlt source's `ref` returns a dlt source or resource; `incremental: { cursor: updated_at, initial: "2024-01-01" }`
 adds a dlt cursor. Incremental sources need the dlt engine (the default).
@@ -366,7 +367,7 @@ connections:
         credentials: "${secret:snowflake.connection_string}"
         naming: sql_ci_v1                              # connection-level default
   lake:
-    type: filesystem                                   # also a source and a state store
+    type: filesystem                                   # also a source and a state store for sinks
     envs:
       dev: { bucket_url: ./lake }
 ```
@@ -586,18 +587,25 @@ dlt destinations can also leave credentials out of `connections.yaml` entirely: 
 
 ## State and rejects
 
-Incremental state is saved only when a run has no record errors (or with `--advance-state`). It lives in
-`.cartage/state` unless `cartage.yaml` points an environment at a `filesystem` connection, e.g. on ephemeral Airflow
-workers: `state: { airflow: { connection: landing, prefix: cartage/state/ } }` (S3, GCS, Azure, ...). Rejected records
-go to `.cartage/rejects/<pipeline>/<run_id>.jsonl`. `cartage state show|reset <pipeline>` inspects or clears state.
+dlt destinations (`snowflake`, `duckdb`, `postgres`, `filesystem`, ...) keep their state the way any dlt pipeline
+does: in the destination (`_dlt_pipeline_state`), loaded together with the data and restored from there on the next
+run, so a fresh Airflow worker needs no state settings. Record errors don't hold that state back: the good rows and
+the new cursor land together, and rejected records stay in the rejects file. `--full-refresh` drops the pipeline's
+tables and state, then loads again.
+
+dlt cannot keep state in SAP or in a file export, so those pipelines use Cartage's state store. It is saved only when a
+run has no record errors (or with `--advance-state`), and it lives in `.cartage/state` unless `cartage.yaml` points an
+environment at a `filesystem` connection: `state: { prd: { connection: landing, prefix: cartage/state/ } }` (S3, GCS,
+Azure, ...). Local state is lost on orchestrator workers, so `cartage generate` refuses a SAP or file export pipeline
+whose environment keeps it on local disk. `--full-refresh` ignores the stored state.
+
+Rejected records go to `.cartage/rejects/<pipeline>/<run_id>.jsonl`. `cartage state show|reset <pipeline>` inspects
+or clears state, wherever it lives.
 
 With several destinations, each destination is its own run named `<pipeline>__<name>`: state, rejects and the
 dlt pipeline are kept per destination, and `state show|reset` covers all of them. `cartage run` goes through the
 destinations in order and stops at the first fatal error; destinations that already finished keep their state, so a
 rerun only retries the rest. With `--json`, `run` prints one result line per destination and `plan` prints a list.
-
-Cartage's state store is the source of truth for dlt state: dlt's restore-from-destination is disabled, so
-`--full-refresh` really starts from scratch.
 
 ## Exit codes
 
@@ -728,8 +736,8 @@ destination:
 
 `naming` takes dlt's built-ins (`direct`, `snake_case`, `sql_cs_v1`, `sql_ci_v1`) or a project module, so naming
 classes such as upper, lower or keep-quotes variants work as they are. Two settings are Cartage's: leave
-`load.delete_completed_jobs` true (the state archive must not keep loaded data) and `restore_from_destination` false
-(Cartage's state store is the source of truth).
+`restore_from_destination` on (the default; it is how a run gets its state back from the destination) and
+`load.delete_completed_jobs` true (the SAP and file export state archive must not keep loaded data).
 
 Process-wide patches to dlt internals (for example keeping all-null columns) are not run settings: apply them in the
 source module (at import, or at the start of the source function), knowing they affect every pipeline in that process.

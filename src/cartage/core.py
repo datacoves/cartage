@@ -73,8 +73,9 @@ class RunResult:
 
 @dataclass
 class PipelineState:
-    data: dict = field(default_factory=dict)  # cartage state, e.g. {"files": {...}, "last_run": {...}}
-    dlt_dir: Path | None = None  # temporary dlt pipelines_dir restored from the state store
+    data: dict = field(default_factory=dict)  # cartage state, e.g. {"last_run": {...}}
+    dlt_dir: Path | None = None  # temporary dlt pipelines_dir: restored from the state store for sinks, empty otherwise
+    full_refresh: bool = False  # dlt destinations drop the pipeline's tables and state (refresh="drop_resources")
 
 
 class Source(Protocol):

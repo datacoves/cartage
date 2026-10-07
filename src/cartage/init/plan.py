@@ -244,13 +244,23 @@ def _pipeline(a: InitAnswers, first: str, real: list[str], secrets: _Secrets) ->
     return "\n".join([*lines, ""])
 
 
-def _project(a: InitAnswers) -> str:
+def _state(a: InitAnswers, real: list[str]) -> list[str]:
+    """dlt destinations keep state themselves; sinks (SAP, file exports) need a state store, remote for real runs."""
+    if a.destination not in ("sap_bapi", "file_export"):
+        return []
+    remote = real if a.source == "files" else []
+    lines = ["", "# State for SAP and file export runs (dlt destinations keep theirs in the destination).",
+             "# Orchestrated environments need a filesystem connection: local state is lost on remote workers."]
+    if not remote:
+        lines.append("# e.g. prd: {connection: <a filesystem connection>, prefix: cartage/state/}")
+    return [*lines, "state:", *[f"  {e}: {{connection: landing, prefix: cartage/state/}}" if e in remote
+                                else f"  {e}: {{path: .cartage/state}}" for e in a.environments]]
+
+
+def _project(a: InitAnswers, real: list[str]) -> str:
     envs = ", ".join(a.environments)
     lines = ["# Cartage project settings.", f"project: {_scalar(a.project or 'project')}", f"environments: [{envs}]",
-             f"default_env: {a.environments[0]}", "", "defaults:", "  engine: dlt", "",
-             "# Incremental state per environment; remote workers can keep it in a filesystem connection, e.g.",
-             "# prd: {connection: landing, prefix: cartage/state/}", "state:",
-             *[f"  {e}: {{path: .cartage/state}}" for e in a.environments]]
+             f"default_env: {a.environments[0]}", "", "defaults:", "  engine: dlt", *_state(a, real)]
     if a.schedule.target == "airflow":
         lines += ["", "orchestrators:", "  airflow:", "    dags_dir: dags",
                   "    default_args: {owner: data-team, retries: 1}"]
@@ -283,7 +293,7 @@ def plan_project(a: InitAnswers, fetched: dict[str, bytes]) -> dict[str, bytes]:
     first = a.environments[0]
     real = a.environments[1:] if a.sample_data is not None else list(a.environments)
     secrets = _Secrets()
-    files = {"cartage.yaml": _project(a), "connections.yaml": _connections(a, first, real, secrets),
+    files = {"cartage.yaml": _project(a, real), "connections.yaml": _connections(a, first, real, secrets),
              f"pipelines/{a.pipeline_name}.yaml": _pipeline(a, first, real, secrets),
              ".gitignore": ".cartage/\n*.duckdb\noutput/\n"}
     files[".cartage/secrets.yaml"] = secrets.text()

@@ -1,4 +1,5 @@
-"""Per-pipeline, per-env state (cartage JSON + dlt working dir archive) and rejected-record files."""
+"""Per-pipeline, per-env state and rejected-record files. dlt destinations keep their own state (DestinationState);
+sinks, which dlt cannot keep state in, get a state store (cartage JSON + dlt working dir archive)."""
 from __future__ import annotations
 
 import io
@@ -64,6 +65,45 @@ class StateStore:
     def reset(self) -> None:
         self.backend.delete(self.data_key)
         self.backend.delete(self.dlt_key)
+
+
+class DestinationState:
+    """dlt destinations keep state in the destination (_dlt_pipeline_state) and restore it from there, as any dlt
+    pipeline does: each run starts from an empty dlt_dir and nothing is saved here."""
+
+    def __init__(self, name: str, destination):
+        self.name, self.destination = name, destination
+
+    def empty(self) -> PipelineState:
+        return PipelineState({}, Path(tempfile.mkdtemp(prefix="cartage-dlt-")))
+
+    load = empty
+
+    def save(self, state: PipelineState) -> None:
+        pass
+
+    def read_data(self) -> dict:
+        return {}
+
+    def _synced(self, then):
+        from cartage.adapters.engines.dlt import native_pipeline
+
+        with tempfile.TemporaryDirectory(prefix="cartage-dlt-") as tmp, \
+                native_pipeline(self.name, self.destination, Path(tmp)) as pipeline:
+            pipeline.sync_destination()
+            return then(pipeline)
+
+    def show(self) -> dict:
+        return self._synced(lambda p: {"dlt_state": {k: v for k, v in p.state.items() if k != "_local"}
+                                       if p.default_schema_name else None})
+
+    def reset(self) -> None:
+        from dlt.pipeline.helpers import pipeline_drop
+
+        def drop(pipeline):
+            if pipeline.default_schema_name:  # never loaded: nothing to reset
+                pipeline_drop(pipeline, drop_all=True, state_paths="*", state_only=True)()
+        self._synced(drop)
 
 
 def new_run_id() -> str:

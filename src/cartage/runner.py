@@ -11,7 +11,7 @@ from cartage import registry
 from cartage.config import DestinationSpec, Pipeline, Project, SourceSpec, StateConfig
 from cartage.core import CartageError, FatalRunError, RunResult, StateBackend
 from cartage.secrets import Secrets
-from cartage.state import LocalStateBackend, StateStore, new_run_id, write_rejects
+from cartage.state import DestinationState, LocalStateBackend, StateStore, new_run_id, write_rejects
 from cartage.transforms import Step, apply_steps, load_steps
 
 
@@ -27,7 +27,7 @@ class Prepared:
     destination: Any
     engine: Any
     steps: list[Step]
-    store: StateStore
+    store: StateStore | DestinationState
     name: str  # run name: the pipeline name, plus the destination when there are several
     destination_spec: DestinationSpec
     source_spec: SourceSpec
@@ -90,7 +90,10 @@ def prepare(project: Project, pipeline_ref: str, env: str | None = None, engine:
         destination.run_name = pipeline.name
     engine_obj = registry.get("engines", engine_name)()
     name = names[dest_spec.key]
-    store = StateStore(state_backend(project, env, secrets), name, env)
+    if hasattr(dest_cls, "dlt_destination"):
+        store = DestinationState(name, destination)
+    else:
+        store = StateStore(state_backend(project, env, secrets), name, env)
     return Prepared(project, pipeline, env, source_type, dest_type, engine_name, source, destination, engine_obj, steps,
                     store, name, dest_spec, spec)
 
@@ -117,6 +120,7 @@ def _run_engine(prep: Prepared, state, on_progress: Callable[[RunResult], None])
 def run_pipeline(prep: Prepared, *, advance_state: bool = False, full_refresh: bool = False,
                  on_progress: Callable[[RunResult], None] | None = None) -> RunResult:
     state = prep.store.empty() if full_refresh else prep.store.load()
+    state.full_refresh = full_refresh
     try:
         try:
             result = _run_engine(prep, state, on_progress or (lambda _: None))
@@ -131,7 +135,8 @@ def run_pipeline(prep: Prepared, *, advance_state: bool = False, full_refresh: b
         run_id = new_run_id()
         if result.errors:
             result.rejects_path = str(write_rejects(prep.project.root, prep.name, run_id, result.errors))
-        if advance_state or not result.errors:
+        # dlt destinations load state with the data, so it has advanced whatever the record errors
+        if advance_state or not result.errors or isinstance(prep.store, DestinationState):
             state.data["last_run"] = {"run_id": run_id, "read": result.read, "ok": result.ok, "errors": len(result.errors)}
             prep.store.save(state)
             result.state_advanced = True

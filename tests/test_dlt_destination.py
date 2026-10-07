@@ -134,12 +134,10 @@ def test_each_destination_is_its_own_run_with_its_own_state(project, tmp_path):
     assert [json.loads(line)["ok"] for line in result.stdout.splitlines()] == [2, 2]
     assert len(rows(tmp_path / "lake_a", "fan", "materials")) == 2
     assert len(rows(tmp_path / "lake_b", "fan", "archive")) == 2
-    state = project / ".cartage" / "state"
-    assert (state / "fan__lake_a" / "dev" / "state.json").is_file()
-    assert (state / "fan__lake_b" / "dev" / "state.json").is_file()
-    assert set(json.loads(cli(project, "state", "show", "fan").stdout)) == {"fan__lake_a", "fan__lake_b"}
-    assert cli(project, "state", "reset", "fan", "-y").exit_code == 0
-    assert not (state / "fan__lake_a" / "dev" / "state.json").exists()
+    assert not (project / ".cartage" / "state").exists()  # dlt keeps the state in each destination
+    shown = json.loads(cli(project, "state", "show", "fan").stdout)
+    assert {name: state["dlt_state"]["pipeline_name"] for name, state in shown.items()} == {
+        "fan__lake_a": "fan__lake_a", "fan__lake_b": "fan__lake_b"}
 
 
 def test_after_load_hooks_get_the_pipeline_and_resource_hints_are_kept(project, tmp_path):
@@ -191,6 +189,15 @@ def test_incremental_options_reach_dlt(project, tmp_path):
         assert cli(project, "run", "inc", "--json").exit_code == 0
 
     assert seen.read_text().split() == ["None", "50"]  # last value 300, minus lag 250
+    assert not (project / ".cartage" / "state").exists()  # restored from the destination, like a fresh worker
+
+    assert cli(project, "state", "reset", "inc", "-y").exit_code == 0
+    assert cli(project, "run", "inc", "--json").exit_code == 0
+    assert seen.read_text().split()[-1] == "None"
+
+    assert cli(project, "run", "inc", "--full-refresh", "--json").exit_code == 0
+    assert seen.read_text().split()[-1] == "None"
+    assert len(rows(tmp_path / "lake", "inc", "events")) == 2  # tables dropped, then loaded again
 
     path = project / "pipelines" / "inc.yaml"
     path.write_text(path.read_text().replace("lag: 250", "lagg: 250"))

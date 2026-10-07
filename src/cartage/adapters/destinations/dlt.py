@@ -95,7 +95,7 @@ class DltDestinationAdapter:
                 func(pipeline, **kwargs)
             except Exception as e:
                 raise FatalRunError(f"after_load '{ref}' failed: {type(e).__name__}: {mask(str(e))}",
-                                    hint="The data is loaded; state is not saved, so the next run loads it again") from e
+                                    hint="The data and its dlt state are loaded; fix the hook, it runs again after the next load") from e
 
     def preview(self, records: list[dict]) -> list[dict]:
         return []  # rows load as transformed; there is no separate payload to show

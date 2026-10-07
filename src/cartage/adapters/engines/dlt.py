@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 import shutil
 from collections.abc import Callable, Iterator
+from contextlib import contextmanager, nullcontext
+from pathlib import Path
 from unittest.mock import patch
 
 import dlt
@@ -14,13 +16,20 @@ from cartage.core import CartageError, FatalRunError, PipelineState, RunResult, 
 from cartage.transforms import Step, apply_steps
 
 
+@contextmanager
+def native_pipeline(name: str, destination, dlt_dir: Path):
+    """The dlt pipeline for a dlt destination, with the destination's per-run settings applied while it is open."""
+    with patch.dict(os.environ, destination.dlt_env):
+        yield dlt.pipeline(pipeline_name=name, destination=destination.dlt_destination(),
+                           dataset_name=destination.dataset_name or name, pipelines_dir=str(dlt_dir))
+
+
 class DltEngine:
     def run(self, name: str, source, steps: list[Step], destination, state: PipelineState,
             on_progress: Callable[[RunResult], None]) -> RunResult:
         os.environ.setdefault("RUNTIME__DLTHUB_TELEMETRY", "false")
         os.environ.setdefault("RUNTIME__LOG_LEVEL", "CRITICAL")
-        os.environ.setdefault("LOAD__DELETE_COMPLETED_JOBS", "true")  # the state archive must not keep loaded data
-        os.environ.setdefault("RESTORE_FROM_DESTINATION", "false")  # cartage's state store is the source of truth
+        os.environ.setdefault("LOAD__DELETE_COMPLETED_JOBS", "true")  # a sink's state archive must not keep loaded data
         native = hasattr(destination, "dlt_destination")
         result = RunResult()
         fatal: list[CartageError] = []  # dlt wraps exceptions; keep ours to re-raise with exit code intact
@@ -76,19 +85,19 @@ class DltEngine:
             return r
 
         piped = [pipe(r) for r in resources]
-        if native:
-            target, dataset, file_format = destination.dlt_destination(), destination.dataset_name or name, destination.loader_file_format
-        else:
-            target, dataset, file_format = sink, None, None
+        if native:  # dlt keeps the state in the destination and restores it from there
+            opened = native_pipeline(name, destination, state.dlt_dir)
+            file_format, refresh = destination.loader_file_format, "drop_resources" if state.full_refresh else None
+        else:  # a sink has nowhere to keep state: the runner archives dlt_dir
+            opened = nullcontext(dlt.pipeline(pipeline_name=name, destination=sink, pipelines_dir=str(state.dlt_dir)))
+            file_format, refresh = None, None
 
-        with patch.dict(os.environ, destination.dlt_env if native else {}):  # per-run tuning, restored afterwards
+        with opened as pipeline:
             schema = dlt.Schema(name)
             schema.remove_type_detection("iso_timestamp")  # keep ISO strings as strings, same as the python engine
-            pipeline = dlt.pipeline(pipeline_name=name, destination=target, dataset_name=dataset,
-                                    pipelines_dir=str(state.dlt_dir))
             pipeline.abort_packages()  # a failed earlier run must not be replayed from the reused dlt_dir
             try:
-                pipeline.run(piped, schema=schema, loader_file_format=file_format)
+                pipeline.run(piped, schema=schema, loader_file_format=file_format, refresh=refresh)
             except Exception as e:
                 error = fatal[0] if fatal else FatalRunError(f"dlt pipeline failed: {e}")
                 if isinstance(error, FatalRunError):

@@ -18,9 +18,8 @@ from cartage.init import refuse_existing, write_project
 from cartage.init.answers import Origin, fetch_files, load_answers
 from cartage.init.plan import placeholders, plan_project
 from cartage.init.questions import ask
-from cartage.runner import prepare_all, preview, run_pipeline, state_backend
+from cartage.runner import prepare_all, preview, run_pipeline
 from cartage.secrets import Secrets, mask
-from cartage.state import StateStore
 
 app = typer.Typer(
     name="cartage",
@@ -99,7 +98,7 @@ def run(
     env: str | None = EnvOption,
     engine: str | None = EngineOption,
     advance_state: bool = typer.Option(False, "--advance-state", help="Save state even if records failed."),
-    full_refresh: bool = typer.Option(False, "--full-refresh", help="Ignore stored state."),
+    full_refresh: bool = typer.Option(False, "--full-refresh", help="Start from scratch: dlt destinations drop their tables and state; others ignore stored state."),
     as_json: bool = JsonOption,
 ) -> None:
     """Run a pipeline (once per destination, in order; stops at the first fatal error)."""
@@ -208,13 +207,10 @@ def _read_by_a_pipeline(project, name: str, env: str) -> bool:
     return False
 
 
-def _stores(pipeline: str, env: str | None) -> tuple[dict[str, StateStore], str, str]:
+def _stores(pipeline: str, env: str | None) -> tuple[dict, str, str]:
     """State stores by run name: one per destination."""
-    project = load_project(OPTS.project_dir)
-    env = project.resolve_env(env)
-    loaded = project.load_pipeline(pipeline)
-    backend = state_backend(project, env, Secrets(project.root, env=env))
-    return {name: StateStore(backend, name, env) for name in loaded.run_names().values()}, loaded.name, env
+    preps = prepare_all(load_project(OPTS.project_dir), pipeline, env)
+    return {p.name: p.store for p in preps}, preps[0].pipeline.name, preps[0].env
 
 
 @state_app.command("show")
@@ -223,7 +219,7 @@ def state_show(pipeline: str = typer.Argument(..., help="Pipeline file or name."
     with ui.handle_errors(OPTS.debug):
         stores, _, _ = _stores(pipeline, env)
         shown = {name: store.show() for name, store in stores.items()}
-        typer.echo(json.dumps(next(iter(shown.values())) if len(shown) == 1 else shown, indent=2))
+        typer.echo(json.dumps(next(iter(shown.values())) if len(shown) == 1 else shown, indent=2, default=str))
 
 
 @state_app.command("reset")
@@ -244,6 +240,20 @@ def state_reset(
     ui.console.print(ui.Text.assemble(("✔ ", "green"), f"state for {name} ({env}) deleted"))
 
 
+def _check_remote_state(project, pipeline, env: str) -> None:
+    """Sinks (SAP, file exports) keep state in Cartage's state store: on an orchestrator it must not be local."""
+    cfg = project.config.state.get(env)
+    if cfg is not None and cfg.connection:
+        return
+    for d in pipeline.destination_specs:
+        ctype = project.connection(d.connection, env)[0]
+        if not hasattr(registry.destination_class(ctype), "dlt_destination"):
+            raise CartageError(f"Pipeline '{pipeline.name}' writes to '{d.connection}' ({ctype}), which keeps its state "
+                               f"in Cartage's state store, and env '{env}' keeps that state on local disk",
+                               hint=f"In cartage.yaml: state: {{ {env}: {{ connection: <a filesystem connection>, "
+                                    "prefix: cartage/state/ } }")
+
+
 @app.command()
 def generate(
     pipelines: list[str] | None = typer.Argument(None, help="Pipelines (default: all with a schedule)."),
@@ -261,7 +271,11 @@ def generate(
                                   indent=2, default=str))
             return
         refs = pipelines or [str(p) for p in project.pipeline_files()]
-        files = orchestrator.generate(project, [project.load_pipeline(r) for r in refs], output)
+        loaded = [project.load_pipeline(r) for r in refs]
+        for p in loaded:
+            if target in p.schedule:
+                _check_remote_state(project, p, orchestrator.settings(project, p)["env"])
+        files = orchestrator.generate(project, loaded, output)
         if check:
             stale = [p for p, content in files.items() if not p.is_file() or p.read_text(encoding="utf-8") != content]
             ui.generate_check(project, files, stale)

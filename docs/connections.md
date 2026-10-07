@@ -32,13 +32,16 @@ Any setting can be a reference instead of a literal: `${secret:key}`, `${env:NAM
 (see the README's [Secrets](../README.md#secrets) and [Airflow connections](../README.md#airflow-connections)).
 Pipeline `with:` values can use them too.
 
-| Type                                         | Provided by | Source | Destination              | State store | Install                         |
+| Type                                         | Provided by | Source | Destination              | Holds state | Install                         |
 | -------------------------------------------- | ----------- | :----: | :----------------------: | :---------: | ------------------------------- |
-| [`filesystem`](#filesystem)                  | dlt         |   ✔    | ✔ data lake              |      ✔      | included; `dlt[s3]`, `dlt[gs]`, `dlt[az]`, `dlt[http]` for remote locations |
-| [`snowflake`, `duckdb`, `postgres`, ...](#dlt-destinations) | dlt |  | ✔                     |             | the driver: `dlt[snowflake]`, ... |
+| [`filesystem`](#filesystem)                  | dlt         |   ✔    | ✔ data lake              | ✔ its own, and SAP / file export state | included; `dlt[s3]`, `dlt[gs]`, `dlt[az]`, `dlt[http]` for remote locations |
+| [`snowflake`, `duckdb`, `postgres`, ...](#dlt-destinations) | dlt |  | ✔                     |      ✔ its own      | the driver: `dlt[snowflake]`, ... |
 | [`file_export`](#file_export)                | Cartage     |        | ✔ one file per run       |             | included                        |
 | [`sap_bapi`](#sap_bapi)                      | Cartage     |        | ✔ a BAPI call per record |             | included (mock transport)       |
 | [`ref:`](#dlt-sources-ref) (no connection)   | dlt         |   ✔    |                          |             | whatever the source needs       |
+
+dlt destinations keep their own state, as in any dlt project. SAP and file exports can't, so their state goes to
+Cartage's state store: a `filesystem` connection (see the README's [State and rejects](../README.md#state-and-rejects)).
 
 `cartage plugins` lists the installed Cartage types and every dlt destination type; `cartage connections list` shows a
 project's connections and `cartage connections test <name>` checks one. dlt destination names are reserved, so a
@@ -50,7 +53,7 @@ Every destination also takes `name` in the pipeline: it tells apart two destinat
 ## `filesystem`
 
 A folder, a bucket or a web server, through dlt's filesystem support (fsspec). One connection can be a source, a dlt
-destination (a data lake) and Cartage's state store (`state: { airflow: { connection: landing, prefix: state/ } }`).
+destination (a data lake) and the state store for SAP and file export pipelines (`state: { prd: { connection: landing, prefix: state/ } }`).
 
 | Connection setting | Required | Meaning                                                                                   |
 | ------------------ | :------: | ----------------------------------------------------------------------------------------- |
