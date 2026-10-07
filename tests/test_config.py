@@ -45,7 +45,7 @@ def write(root, files):
 
 @pytest.fixture
 def root(tmp_path):
-    write(tmp_path, {"cartage.yaml": PROJECT, "connections.yaml": CONNECTIONS, "pipelines/materials.yaml": PIPELINE})
+    write(tmp_path, {".cartage/config.yaml": PROJECT, ".cartage/connections.yaml": CONNECTIONS, "pipelines/materials.yaml": PIPELINE})
     return tmp_path
 
 
@@ -54,12 +54,12 @@ def test_finds_root_from_subdirectory(root):
 
 
 def test_missing_project_file(tmp_path):
-    with pytest.raises(CartageError, match="No cartage.yaml found"):
+    with pytest.raises(CartageError, match="No .cartage/config.yaml found"):
         load_project(tmp_path)
 
 
 def test_default_env_must_be_listed(root):
-    (root / "cartage.yaml").write_text(PROJECT.replace("default_env: dev", "default_env: qa"))
+    (root / ".cartage/config.yaml").write_text(PROJECT.replace("default_env: dev", "default_env: qa"))
     with pytest.raises(CartageError, match="default_env 'qa'"):
         load_project(root)
 
@@ -86,7 +86,7 @@ def test_multiple_pipeline_destinations(root):
         "  local_files:\n",
         "  warehouse:\n    type: dlt\n    envs:\n      dev: { destination: filesystem, bucket_url: file:///tmp/cartage-tests }\n  local_files:\n",
     )
-    (root / "connections.yaml").write_text(connections_text)
+    (root / ".cartage/connections.yaml").write_text(connections_text)
     (root / "pipelines" / "materials.yaml").write_text(pipeline_text)
 
     destinations = load_project(root).load_pipeline("materials").destination_specs
@@ -128,8 +128,8 @@ def test_pipeline_error_points_at_line(root):
 
 
 def test_invalid_yaml_reports_line(root):
-    (root / "connections.yaml").write_text("connections:\n  a: [unclosed\n")
-    with pytest.raises(CartageError, match="connections.yaml:.*invalid YAML"):
+    (root / ".cartage/connections.yaml").write_text("connections:\n  a: [unclosed\n")
+    with pytest.raises(CartageError, match=".cartage/connections.yaml:.*invalid YAML"):
         load_project(root)
 
 
@@ -141,7 +141,7 @@ def test_pipeline_not_found_lists_names(root):
 
 def test_connection_lookup(root):
     project = load_project(root)
-    assert project.connection("local_files", "dev") == ("filesystem", {"bucket_url": "./data"}, "connections.yaml:5")
+    assert project.connection("local_files", "dev") == ("filesystem", {"bucket_url": "./data"}, ".cartage/connections.yaml:5")
     with pytest.raises(CartageError, match="no settings for environment 'prd'"):
         project.connection("local_files", "prd")
     with pytest.raises(CartageError, match="Unknown connection 'sap'"):
@@ -149,7 +149,7 @@ def test_connection_lookup(root):
 
 
 def test_an_environment_can_override_the_type(root):
-    (root / "connections.yaml").write_text(
+    (root / ".cartage/connections.yaml").write_text(
         "connections:\n  warehouse:\n    type: snowflake\n    envs:\n"
         "      dev: { type: duckdb, credentials: dev.duckdb }\n      prd: { database: raw }\n")
     project = load_project(root)
@@ -172,3 +172,11 @@ def test_a_ref_source_needs_no_type(root):
         "  ref: sources.erp:materials\n"))
     source = load_project(root).load_pipeline("materials").source
     assert (source.type, source.options()["ref"]) == ("dlt", "sources.erp:materials")
+
+
+def test_config_yaml_takes_env_references(project, monkeypatch):
+    path = project / ".cartage" / "config.yaml"
+    path.write_text(path.read_text().replace("prefix: cartage/state/", 'prefix: "${env:STATE_PREFIX:-cartage/state/}"'))
+    assert load_project(project).config.state["prd"].prefix == "cartage/state/"
+    monkeypatch.setenv("STATE_PREFIX", "other/")
+    assert load_project(project).config.state["prd"].prefix == "other/"

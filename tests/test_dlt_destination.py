@@ -30,7 +30,7 @@ def rows(bucket: Path, dataset: str, table: str) -> list[dict]:
 
 
 def add_lakes(project: Path, tmp_path: Path, *names: str) -> None:
-    path = project / "connections.yaml"
+    path = project / ".cartage/connections.yaml"
     path.write_text(path.read_text() + "".join(
         f"\n  {n}:\n    type: filesystem\n    envs:\n      dev: {{ bucket_url: file://{tmp_path / n} }}\n"
         for n in names))
@@ -102,7 +102,7 @@ def test_arrow_batches_pass_through_untouched_and_tuning_applies_only_to_the_run
 
 def test_project_naming_module_and_connection_level_tuning(project, tmp_path):
     add_lakes(project, tmp_path, "lake")
-    connections = project / "connections.yaml"
+    connections = project / ".cartage/connections.yaml"
     connections.write_text(connections.read_text().replace(
         f"bucket_url: file://{tmp_path / 'lake'} }}", f"bucket_url: file://{tmp_path / 'lake'}, naming: naming_upper }}"))
     (project / "naming_upper.py").write_text(

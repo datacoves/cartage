@@ -84,7 +84,7 @@ def test_failed_check_masks_secrets(tmp_path):
 
 
 def test_plan_never_prints_resolved_secrets(project, monkeypatch):
-    conn = project / "connections.yaml"
+    conn = project / ".cartage/connections.yaml"
     conn.write_text(
         conn.read_text().replace(
             'dev: {transport: mock, client: "100"}',

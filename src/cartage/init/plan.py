@@ -70,7 +70,8 @@ class _Secrets:
         return f"${{secret:{conn}.{{env}}.{field}}}"
 
     def text(self) -> str:
-        head = ['# Secrets for this project. Never commit this file (.cartage/ is git-ignored).',
+        head = ['# Secrets for this project. Never commit this file (it is git-ignored). Secrets shared by several',
+                '# projects can go in ~/.cartage/secrets.yaml instead; this file wins when both have a key.',
                 '# Replace every "<fill me>"; `cartage validate --env <env>` lists the ones left.',
                 "# Any value can come from an environment variable instead: CARTAGE_SECRET__<CONNECTION>__<ENV>__<FIELD>."]
         if not self.entries:
@@ -293,9 +294,9 @@ def plan_project(a: InitAnswers, fetched: dict[str, bytes]) -> dict[str, bytes]:
     first = a.environments[0]
     real = a.environments[1:] if a.sample_data is not None else list(a.environments)
     secrets = _Secrets()
-    files = {"cartage.yaml": _project(a, real), "connections.yaml": _connections(a, first, real, secrets),
+    files = {".cartage/config.yaml": _project(a, real), ".cartage/connections.yaml": _connections(a, first, real, secrets),
              f"pipelines/{a.pipeline_name}.yaml": _pipeline(a, first, real, secrets),
-             ".gitignore": ".cartage/\n*.duckdb\noutput/\n"}
+             ".gitignore": ".cartage/secrets.yaml\n.cartage/state/\n.cartage/rejects/\n*.duckdb\noutput/\n"}
     files[".cartage/secrets.yaml"] = secrets.text()
     copied_transforms = any(path.startswith("transforms/") for path in fetched)
     if not copied_transforms:

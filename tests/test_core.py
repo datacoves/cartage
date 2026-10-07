@@ -34,12 +34,12 @@ def _app_raising(error, debug=False):
 def test_config_error_renders_panel_and_exits_2():
     result = runner.invoke(
         _app_raising(
-            CartageError("Unknown connection 'x'", hint="check connections.yaml")
+            CartageError("Unknown connection 'x'", hint="check .cartage/connections.yaml")
         )
     )
     assert result.exit_code == 2
     assert "Unknown connection 'x'" in result.output
-    assert "check connections.yaml" in result.output
+    assert "check .cartage/connections.yaml" in result.output
 
 
 def test_fatal_error_exits_3():

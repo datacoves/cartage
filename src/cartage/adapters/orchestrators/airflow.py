@@ -1,4 +1,4 @@
-"""Generate thin TaskFlow Airflow DAGs that call `cartage run`. Settings: defaults ← cartage.yaml ← pipeline."""
+"""Generate thin TaskFlow Airflow DAGs that call `cartage run`. Settings: defaults ← .cartage/config.yaml ← pipeline."""
 from __future__ import annotations
 
 import keyword
@@ -12,7 +12,7 @@ from jinja2 import ChoiceLoader, Environment, FileSystemLoader, PackageLoader, S
 
 from cartage import __version__
 from cartage.core import CartageError
-from cartage.secrets import airflow_env_key, airflow_template, references
+from cartage.secrets import airflow_env_key, airflow_template, expand_env, references
 
 DEFAULTS: dict[str, Any] = {
     "dags_dir": "dags",
@@ -27,7 +27,7 @@ DEFAULTS: dict[str, Any] = {
     "catchup": False,
     "env": "prd",
     "command": "cartage",
-    "dependencies": [],  # extra packages for a uvx / uv run command (--with); cartage.yaml + pipeline are combined
+    "dependencies": [],  # extra packages for a uvx / uv run command (--with); .cartage/config.yaml + pipeline are combined
     "project_dir": None,
     "dag_id": None,
     "task_env": {},  # extra environment variables for the task, e.g. UV_CACHE_DIR
@@ -63,7 +63,7 @@ class AirflowOrchestrator:
             raise CartageError(f"Pipeline '{pipeline.name}' has no schedule.airflow",
                                hint="Add schedule: { airflow: { schedule: '0 3 * * *' } }")
         project_settings = project.config.orchestrators.get("airflow", {})
-        s = merge(merge(DEFAULTS, project_settings), pipeline.schedule["airflow"])
+        s = merge(merge(DEFAULTS, project_settings), expand_env(pipeline.schedule["airflow"], project.rel(pipeline.path)))
         unknown = sorted(set(s) - set(DEFAULTS))
         if unknown:
             hint = "operator was replaced by task_decorator (e.g. bash, datacoves_bash)" if "operator" in unknown else ""

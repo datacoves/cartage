@@ -49,7 +49,7 @@ def test_generation_is_deterministic(project):
 
 
 def test_settings_merge_image_and_custom_decorator(project):
-    settings = project / "cartage.yaml"
+    settings = project / ".cartage/config.yaml"
     settings.write_text(
         settings.read_text().replace(
             "    dags_dir: dags\n",
@@ -82,7 +82,7 @@ def test_project_template_override_extends_blocks(project):
 
 
 def test_sink_pipelines_need_remote_state_on_the_orchestrator(project):
-    config = project / "cartage.yaml"
+    config = project / ".cartage/config.yaml"
     config.write_text(config.read_text().replace("prd: {connection: landing, prefix: cartage/state/}",
                                                  "prd: {path: .cartage/state}"))
     result = cli(project, "generate")
@@ -179,12 +179,12 @@ def test_generated_bash_command_runs(project):
 
 
 def test_airflow_connection_references_become_task_env(project):
-    connections = project / "connections.yaml"
+    connections = project / ".cartage/connections.yaml"
     connections.write_text(connections.read_text().replace(
         '      dev: {transport: mock, client: "100"}\n',
         '      dev: {transport: mock, client: "${airflow:sap_conn.schema}", user: "${airflow:sap-conn.extra.user.name}"}\n'))
     connections.write_text(connections.read_text() + "\n  unused:\n    type: sap_bapi\n    envs:\n      dev: { client: \"${airflow:other.login}\" }\n")
-    settings = project / "cartage.yaml"
+    settings = project / ".cartage/config.yaml"
     settings.write_text(settings.read_text().replace("    dags_dir: dags\n", "    dags_dir: dags\n    task_env: { UV_CACHE_DIR: /tmp/uv_cache }\n"))
 
     content = generate(project)
@@ -201,7 +201,7 @@ def test_no_task_env_without_references(project):
 
 
 def test_invalid_airflow_reference_field(project):
-    connections = project / "connections.yaml"
+    connections = project / ".cartage/connections.yaml"
     connections.write_text(connections.read_text().replace('client: "100"}', 'client: "${airflow:sap_conn.passwd}" }', 1))
     result = cli(project, "generate")
     assert result.exit_code == 2
@@ -209,7 +209,7 @@ def test_invalid_airflow_reference_field(project):
 
 
 def test_run_resolves_airflow_references_from_task_env(project, monkeypatch):
-    connections = project / "connections.yaml"
+    connections = project / ".cartage/connections.yaml"
     connections.write_text(connections.read_text().replace('client: "100"}', 'client: "${airflow:sap_conn.schema}" }', 1))
     (project / "data/sample/materials.csv").write_text(
         "material,industry,type,description,uom,status\n100001,M,FERT,Pump housing,EA,active\n")
@@ -239,7 +239,7 @@ def test_old_operator_setting_points_to_task_decorator(project):
 
 
 def test_dependencies_add_up_and_become_uv_with_flags(project):
-    settings = project / "cartage.yaml"
+    settings = project / ".cartage/config.yaml"
     settings.write_text(settings.read_text().replace(
         "    dags_dir: dags\n",
         '    dags_dir: dags\n    command: uvx --from "cartage>=0.7" cartage\n    dependencies: ["dlt[snowflake]", pandas]\n'))

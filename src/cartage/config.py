@@ -1,4 +1,4 @@
-"""Load and validate cartage.yaml, connections.yaml and pipeline files, keeping line numbers for errors."""
+"""Load and validate .cartage/config.yaml, .cartage/connections.yaml and pipeline files, keeping line numbers for errors."""
 from __future__ import annotations
 
 import re
@@ -12,9 +12,10 @@ from ruamel.yaml.comments import CommentedMap
 from ruamel.yaml.error import YAMLError
 
 from cartage.core import CartageError
+from cartage.secrets import expand_env
 
-PROJECT_FILE = "cartage.yaml"
-CONNECTIONS_FILE = "connections.yaml"
+PROJECT_FILE = ".cartage/config.yaml"
+CONNECTIONS_FILE = ".cartage/connections.yaml"
 
 
 class Defaults(BaseModel):
@@ -284,7 +285,8 @@ def find_root(start: Path) -> Path:
 
 def load_project(project_dir: Path | None = None) -> Project:
     root = find_root(project_dir or Path.cwd())
-    config = validate_model(ProjectConfig, load_yaml(root / PROJECT_FILE, PROJECT_FILE), PROJECT_FILE)
+    raw_config = expand_env(load_yaml(root / PROJECT_FILE, PROJECT_FILE), PROJECT_FILE)
+    config = validate_model(ProjectConfig, raw_config, PROJECT_FILE)
     conn_path = root / CONNECTIONS_FILE
     raw = load_yaml(conn_path, CONNECTIONS_FILE) if conn_path.is_file() else CommentedMap()
     connections = validate_model(ConnectionsFile, raw, CONNECTIONS_FILE).connections

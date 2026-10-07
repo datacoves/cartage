@@ -36,7 +36,7 @@ def unfilled(project: Project, pipeline, env: str) -> list[str]:
         elif isinstance(value, str):
             if value == FILL_ME:
                 found.append(where)
-            for kind, key in REF.findall(value):
+            for kind, key, _default in REF.findall(value):
                 key = key.replace("{env}", env)
                 if kind == "secret" and secrets.peek(key) == FILL_ME:
                     found.append(f"{key} (secret)")

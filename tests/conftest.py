@@ -13,6 +13,15 @@ EXAMPLE = Path(__file__).resolve().parents[1] / "examples" / "sap" / "answers.ya
 INCREMENTAL = "      incremental: true\n"
 
 
+@pytest.fixture(autouse=True)
+def home(tmp_path, monkeypatch):
+    """An empty home folder: no ~/.cartage/secrets.yaml (or ~/.dlt) from the machine running the tests."""
+    path = tmp_path / "home"
+    path.mkdir()
+    monkeypatch.setenv("HOME", str(path))
+    return path
+
+
 @pytest.fixture
 def project(tmp_path):
     """The SAP example from `cartage init --answers`, without incremental reads so it runs on both engines."""

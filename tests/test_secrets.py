@@ -4,7 +4,7 @@ from typer.testing import CliRunner
 
 from cartage import ui
 from cartage.core import CartageError
-from cartage.secrets import FILL_ME, Secrets, mask
+from cartage.secrets import FILL_ME, Secrets, expand_env, mask
 
 
 def test_env_reference(tmp_path):
@@ -25,11 +25,23 @@ def test_secret_env_var_wins_over_file(tmp_path):
     assert s.resolve("${secret:sap.passwd}", "x") == "file_pw"  # ggignore (fake test value)
 
 
+def test_home_secrets_fill_in_what_the_project_file_lacks(tmp_path, home):
+    (home / ".cartage").mkdir()
+    (home / ".cartage" / "secrets.yaml").write_text("sap:\n  user: home_user\n  passwd: home_pw\n")  # ggignore (fake test value)
+    (tmp_path / ".cartage").mkdir()
+    (tmp_path / ".cartage" / "secrets.yaml").write_text("sap:\n  user: project_user\n  client: <fill me>\n")
+    s = Secrets(tmp_path, environ={})
+    assert s.resolve("${secret:sap.user}", "x") == "project_user"
+    assert s.resolve("${secret:sap.passwd}", "x") == "home_pw"  # ggignore (fake test value)
+    with pytest.raises(CartageError, match=r"\(\.cartage/secrets\.yaml, referenced at x\)"):
+        s.resolve("${secret:sap.client}", "x")
+
+
 def test_missing_secret_names_reference_location_and_env_var(tmp_path):
     with pytest.raises(CartageError) as info:
-        Secrets(tmp_path, environ={}).resolve({"passwd": "${secret:sap.passwd}"}, "connections.yaml:7")
+        Secrets(tmp_path, environ={}).resolve({"passwd": "${secret:sap.passwd}"}, ".cartage/connections.yaml:7")
     assert "sap.passwd" in info.value.message
-    assert "connections.yaml:7" in info.value.message
+    assert ".cartage/connections.yaml:7" in info.value.message
     assert "CARTAGE_SECRET__SAP__PASSWD" in info.value.hint
 
 
@@ -131,3 +143,17 @@ def test_unfilled_setting_names_its_path(tmp_path):
 def test_unfilled_value_from_the_environment_is_also_caught(tmp_path):
     with pytest.raises(CartageError, match="is still"):
         Secrets(tmp_path, environ={"CARTAGE_SECRET__A__B": FILL_ME}).resolve("${secret:a.b}", "x")
+
+
+def test_env_defaults_and_secrets_that_are_env_references(tmp_path):
+    (tmp_path / ".cartage").mkdir()
+    (tmp_path / ".cartage" / "secrets.yaml").write_text('api: {token: "${env:API_TOKEN}"}\n')
+    s = Secrets(tmp_path, environ={"API_TOKEN": "t0ken"})  # ggignore (fake test value)
+    assert s.resolve("${env:NOPE:-fallback} ${env:NOPE:-} ${secret:api.token}", "x") == "fallback  t0ken"
+
+
+def test_expand_env_fills_env_references_only():
+    data = {"a": ["${env:X}", "${secret:k}", "${airflow:c.login}"], "b": "${env:Y:-y}"}
+    assert expand_env(data, "f", {"X": "1"}) == {"a": ["1", "${secret:k}", "${airflow:c.login}"], "b": "y"}
+    with pytest.raises(CartageError, match="Environment variable Z is not set \\(referenced at f\\)"):
+        expand_env("${env:Z}", "f", {})

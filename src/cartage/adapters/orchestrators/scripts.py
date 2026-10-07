@@ -1,5 +1,5 @@
 """Generate thin Dagster and Prefect definitions that shell out to `cartage run`, like the Airflow DAGs.
-Settings: defaults ← cartage.yaml `orchestrators.<target>` ← pipeline `schedule.<target>`."""
+Settings: defaults ← .cartage/config.yaml `orchestrators.<target>` ← pipeline `schedule.<target>`."""
 from __future__ import annotations
 
 import os
@@ -12,6 +12,7 @@ from jinja2 import ChoiceLoader, Environment, FileSystemLoader, PackageLoader, S
 from cartage import __version__
 from cartage.adapters.orchestrators.airflow import _check_literal, merge
 from cartage.core import CartageError
+from cartage.secrets import expand_env
 
 COMMON: dict[str, Any] = {"schedule": None, "env": "prd", "command": "cartage", "project_dir": None, "name": None}
 
@@ -25,7 +26,8 @@ class ScriptOrchestrator:
         if self.target not in pipeline.schedule:
             raise CartageError(f"Pipeline '{pipeline.name}' has no schedule.{self.target}",
                                hint=f"Add schedule: {{ {self.target}: {{ schedule: '0 3 * * *' }} }}")
-        s = merge(merge(self.defaults, project.config.orchestrators.get(self.target, {})), pipeline.schedule[self.target])
+        schedule = expand_env(pipeline.schedule[self.target], project.rel(pipeline.path))
+        s = merge(merge(self.defaults, project.config.orchestrators.get(self.target, {})), schedule)
         unknown = sorted(set(s) - set(self.defaults))
         if unknown:
             raise CartageError(f"Unknown {self.title} setting(s): {', '.join(unknown)}",

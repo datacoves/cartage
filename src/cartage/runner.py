@@ -75,9 +75,11 @@ def prepare(project: Project, pipeline_ref: str, env: str | None = None, engine:
                            hint="Set engine: dlt in the pipeline, or remove incremental")
     if hasattr(dest_cls, "dlt_destination") and engine_name != "dlt":
         raise CartageError(f"{label}: dlt destinations need the dlt engine (current: {engine_name})",
-                           hint="Set engine: dlt in the pipeline, or in cartage.yaml defaults")
+                           hint="Set engine: dlt in the pipeline, or in .cartage/config.yaml defaults")
 
     steps = load_steps(pipeline.transforms, project.root)
+    for step in steps:
+        step.kwargs = secrets.resolve(step.kwargs, label)
     if source_type in registry.NOT_CONNECTION_TYPES and spec.connection:
         raise CartageError(f"{label}: '{spec.connection}' is a {source_type} connection; use ref: instead")
     source = registry.get("sources", source_type)(source_conf, source_opts, project.root)

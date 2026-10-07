@@ -6,7 +6,7 @@ from pathlib import Path
 from cartage.config import PROJECT_FILE
 from cartage.core import CartageError
 
-ALWAYS_WRITTEN = (PROJECT_FILE, "connections.yaml", ".gitignore", ".cartage/secrets.yaml")
+ALWAYS_WRITTEN = (PROJECT_FILE, ".cartage/connections.yaml", ".gitignore", ".cartage/secrets.yaml")
 
 
 def refuse_existing(dest: Path, paths=ALWAYS_WRITTEN) -> None:

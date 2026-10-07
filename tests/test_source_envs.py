@@ -25,8 +25,9 @@ destination:
 
 
 def make(tmp_path, pipeline=PIPELINE):
-    (tmp_path / "cartage.yaml").write_text("project: t\nenvironments: [dev, prd]\ndefault_env: dev\n")
-    (tmp_path / "connections.yaml").write_text(
+    (tmp_path / ".cartage").mkdir()
+    (tmp_path / ".cartage/config.yaml").write_text("project: t\nenvironments: [dev, prd]\ndefault_env: dev\n")
+    (tmp_path / ".cartage/connections.yaml").write_text(
         "connections:\n"
         "  files:\n    type: filesystem\n    envs:\n      dev: {bucket_url: ./data}\n      prd: {bucket_url: ./data}\n"
         "  out:\n    type: file_export\n    envs:\n      dev: {path: out}\n      prd: {path: out}\n")

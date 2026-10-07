@@ -46,7 +46,7 @@ def _version(value: bool) -> None:
 
 @app.callback()
 def main(
-    project_dir: Path | None = typer.Option(None, "--project-dir", "-C", help="Project folder (default: nearest folder with cartage.yaml)."),
+    project_dir: Path | None = typer.Option(None, "--project-dir", "-C", help="Project folder (default: nearest folder with .cartage/config.yaml)."),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Debug logging."),
     debug: bool = typer.Option(False, "--debug", help="Show tracebacks on errors."),
     no_color: bool = typer.Option(False, "--no-color", help="Disable colors."),
@@ -250,7 +250,7 @@ def _check_remote_state(project, pipeline, env: str) -> None:
         if not hasattr(registry.destination_class(ctype), "dlt_destination"):
             raise CartageError(f"Pipeline '{pipeline.name}' writes to '{d.connection}' ({ctype}), which keeps its state "
                                f"in Cartage's state store, and env '{env}' keeps that state on local disk",
-                               hint=f"In cartage.yaml: state: {{ {env}: {{ connection: <a filesystem connection>, "
+                               hint=f"In .cartage/config.yaml: state: {{ {env}: {{ connection: <a filesystem connection>, "
                                     "prefix: cartage/state/ } }")
 
 

@@ -65,7 +65,7 @@ def test_on_error_fail_aborts_with_exit_3(project, engine):
 
 @pytest.mark.parametrize("engine", ENGINES)
 def test_unreachable_mock_server_exits_3(project, engine):
-    conns = project / "connections.yaml"
+    conns = project / ".cartage/connections.yaml"
     conns.write_text(conns.read_text().replace('transport: mock, client: "100"',
                                                'transport: mock, client: "100", url: "http://127.0.0.1:9"'))
     result = run(project, "--engine", engine)

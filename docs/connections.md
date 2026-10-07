@@ -5,13 +5,13 @@ moves the data, so pipelines keep working if the engine changes.
 
 Settings live in one of two places:
 
-- **Connection settings** go in `connections.yaml`, under each environment of a named connection. They say *where*
+- **Connection settings** go in `.cartage/connections.yaml`, under each environment of a named connection. They say *where*
   and *with which credentials*, and change between environments (a local folder in dev, a bucket in Airflow).
 - **Pipeline options** go in `pipelines/*.yaml`, next to `connection:` in `source:` or `destination:`. They say *what*
   to read or write, and stay the same in every environment.
 
 ```yaml
-# connections.yaml                          # pipelines/materials.yaml
+# .cartage/connections.yaml                          # pipelines/materials.yaml
 connections:                                source:
   landing:                                    connection: landing       # → connection settings
     type: filesystem                          path: materials/*.csv     # → pipeline options
@@ -28,7 +28,8 @@ A pipeline can also replace its whole source in one environment with `source.env
 `with:` block for every environment, so its secrets name the environment with `{env}`:
 `${secret:database.{env}.credentials}`. A value of `"<fill me>"` (what `cartage init` writes) is reported as unfilled.
 
-Any setting can be a reference instead of a literal: `${secret:key}`, `${env:NAME}` or `${airflow:<conn_id>.<field>}`
+Any setting can be a reference instead of a literal: `${secret:key}`, `${env:NAME}` (or `${env:NAME:-default}`) or
+`${airflow:<conn_id>.<field>}`
 (see the README's [Secrets](../README.md#secrets) and [Airflow connections](../README.md#airflow-connections)).
 Pipeline `with:` values can use them too.
 

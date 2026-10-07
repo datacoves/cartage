@@ -47,7 +47,7 @@ def test_unknown_engine(project):
 
 
 def test_state_connection_must_support_state(project):
-    (project / "cartage.yaml").write_text((project / "cartage.yaml").read_text().replace(
+    (project / ".cartage/config.yaml").write_text((project / ".cartage/config.yaml").read_text().replace(
         "dev: {path: .cartage/state}", "dev: { connection: sap }"))
     with pytest.raises(CartageError, match="cannot store state"):
         prepare(load_project(project), "materials", engine="python")

@@ -17,7 +17,7 @@ CLEAN_CSV = "material,industry,type,description,uom,status\n100001,M,FERT,Pump h
 
 def test_generated_dag_runs_cartage(project, tmp_path):
     (project / "data/sample/materials.csv").write_text(CLEAN_CSV)
-    connections = project / "connections.yaml"  # the CSV folder comes from an Airflow connection at run time
+    connections = project / ".cartage/connections.yaml"  # the CSV folder comes from an Airflow connection at run time
     connections.write_text(connections.read_text().replace("dev: { path: ./data }", 'dev: { path: "${airflow:files.schema}" }', 1))
     assert CliRunner().invoke(app, ["-C", str(project), "generate"]).exit_code == 0
     env = {**os.environ,

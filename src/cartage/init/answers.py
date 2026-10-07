@@ -15,6 +15,7 @@ from ruamel.yaml.error import YAMLError
 
 from cartage.config import validate_model
 from cartage.core import CartageError
+from cartage.secrets import expand_env
 
 SAMPLE_FORMATS = {".csv": "csv", ".jsonl": "jsonl", ".ndjson": "jsonl", ".parquet": "parquet"}
 ENV_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
@@ -172,7 +173,7 @@ def load_answers(ref: str | None) -> tuple[InitAnswers, set[str], Origin]:
         raw = YAML(typ="rt").load(text)
     except YAMLError as e:
         raise CartageError(f"{ref}: invalid YAML: {e}") from e
-    answers = validate_model(InitAnswers, raw or {}, ref)
+    answers = validate_model(InitAnswers, expand_env(raw or {}, ref), ref)
     return answers, set(answers.model_fields_set), origin
 
 

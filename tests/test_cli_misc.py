@@ -53,7 +53,7 @@ def test_connections_test_masks_secrets(project, monkeypatch):
         def check_connection(cls, config, root):
             return f"logged in as {config['user']}"
 
-    connections = project / "connections.yaml"
+    connections = project / ".cartage/connections.yaml"
     connections.write_text(connections.read_text().replace('"<fill me>"', '"x"'))
     monkeypatch.setattr("cartage.cli.registry.connection_class", lambda ctype: Leaky)
     result = cli(project, "connections", "test", "sap", "--env", "prd")

@@ -42,7 +42,8 @@ def test_placeholders_are_listed(tmp_path):
 
 
 def test_refuses_an_existing_project(tmp_path):
-    (tmp_path / "cartage.yaml").write_text("project: x\n")
+    (tmp_path / ".cartage").mkdir()
+    (tmp_path / ".cartage/config.yaml").write_text("project: x\n")
     result = init(str(tmp_path), "--yes")
     assert result.exit_code == 2 and "already a Cartage project" in result.output
 
@@ -51,7 +52,7 @@ def test_refuses_to_overwrite_any_file_and_writes_nothing(tmp_path):
     (tmp_path / ".gitignore").write_text("mine\n")
     result = init(str(tmp_path), "--yes")
     assert result.exit_code == 2 and ".gitignore" in result.output
-    assert not (tmp_path / "cartage.yaml").exists()
+    assert not (tmp_path / ".cartage/config.yaml").exists()
     assert (tmp_path / ".gitignore").read_text() == "mine\n"
 
 
@@ -72,4 +73,14 @@ def test_a_file_in_the_way_of_a_folder_is_refused_and_nothing_is_written(tmp_pat
     (tmp_path / "transforms").write_text("not a folder\n")
     result = init(str(tmp_path), "--yes")
     assert result.exit_code == 2 and "transforms" in result.output
-    assert not (tmp_path / "cartage.yaml").exists()
+    assert not (tmp_path / ".cartage/config.yaml").exists()
+
+
+def test_answers_take_env_references(tmp_path, monkeypatch):
+    from cartage.init.answers import load_answers
+
+    answers = tmp_path / "answers.yaml"
+    answers.write_text('project: "${env:PROJECT_NAME:-x}"\npipeline: "${env:PIPELINE:-materials}"\n')
+    monkeypatch.setenv("PROJECT_NAME", "demo")
+    loaded, _, _ = load_answers(str(answers))
+    assert (loaded.project, loaded.pipeline) == ("demo", "materials")

@@ -74,8 +74,8 @@ def test_secrets_and_references_are_per_connection_and_environment(tmp_path):
     secrets = YAML(typ="safe").load(files[".cartage/secrets.yaml"])
     assert set(secrets["warehouse"]) == {"qa", "prd"}  # dev is local
     assert secrets["warehouse"]["prd"]["password"] == "<fill me>"
-    assert "${secret:warehouse.prd.password}" in files["connections.yaml"].decode()
-    assert any(p.startswith("connections.yaml:") for p in placeholders(files))
+    assert "${secret:warehouse.prd.password}" in files[".cartage/connections.yaml"].decode()
+    assert any(p.startswith(".cartage/connections.yaml:") for p in placeholders(files))
 
 
 def test_single_environment_with_a_sample_has_no_placeholders(tmp_path, monkeypatch):
@@ -114,7 +114,7 @@ def test_schedule_writes_the_target(tmp_path):
     _, files = write(tmp_path, InitAnswers(project="p", schedule={"target": "airflow", "cron": "0 6 * * *"}))
     pipeline = YAML(typ="safe").load(files["pipelines/files_to_duckdb.yaml"])
     assert pipeline["schedule"] == {"airflow": {"schedule": "0 6 * * *"}}
-    assert "airflow" in YAML(typ="safe").load(files["cartage.yaml"])["orchestrators"]
+    assert "airflow" in YAML(typ="safe").load(files[".cartage/config.yaml"])["orchestrators"]
 
 
 def test_unknown_destination_lists_the_types():
@@ -143,8 +143,8 @@ def test_yaml_typed_values_stay_strings(tmp_path):
 
 
 def test_copy_cannot_replace_generated_files():
-    with pytest.raises(CartageError, match="cartage.yaml"):
-        plan_project(InitAnswers(copy=["cartage.yaml"]), {"cartage.yaml": b"project: evil\n"})
+    with pytest.raises(CartageError, match=".cartage/config.yaml"):
+        plan_project(InitAnswers(copy=[".cartage/config.yaml"]), {".cartage/config.yaml": b"project: evil\n"})
 
 
 def test_csv_samples_are_read_as_text_by_default(tmp_path, monkeypatch):
@@ -160,4 +160,4 @@ def test_csv_samples_are_read_as_text_by_default(tmp_path, monkeypatch):
 def test_single_environment_explains_the_unused_source_connection(tmp_path):
     _, files = write(tmp_path, InitAnswers(project="p", environments=["dev"], sample_data="s.csv"),
                      {"data/sample/s.csv": SAMPLE})
-    assert "add an environment" in files["connections.yaml"].decode()
+    assert "add an environment" in files[".cartage/connections.yaml"].decode()

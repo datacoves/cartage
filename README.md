@@ -8,7 +8,7 @@ reshape it; an engine moves the data. [dlt](https://dlthub.com) is the default e
 other load tools can be supported later without changing your pipelines.
 
 ```text
-  what you write      cartage.yaml · connections.yaml · pipelines/*.yaml · transforms/*.py
+  what you write      .cartage/config.yaml · .cartage/connections.yaml · pipelines/*.yaml · transforms/*.py
                                               │
                                               ▼
                 ┌───────────────────────── Cartage ─────────────────────────┐
@@ -57,7 +57,7 @@ The demo runs in `dev` on a sample file and a mock SAP; its `prd` environment re
 [Creating a project](#creating-a-project).
 
 Split-screen demo: run `cartage sap mock` in one terminal, set `url: http://localhost:8765` on `sap.dev`
-in `connections.yaml`, and run the pipeline in another terminal.
+in `.cartage/connections.yaml`, and run the pipeline in another terminal.
 
 ## Creating a project
 
@@ -72,7 +72,7 @@ in `connections.yaml`, and run the pipeline in another terminal.
    any credentials exist,
 5. the pipeline name and an optional schedule (Airflow, Dagster or Prefect).
 
-Credentials become placeholders: settings in `connections.yaml` and `${secret:<connection>.<env>.<field>}`
+Credentials become placeholders: settings in `.cartage/connections.yaml` and `${secret:<connection>.<env>.<field>}`
 references to `.cartage/secrets.yaml`, both `"<fill me>"`. The fields come from dlt's own credential classes, so every
 dlt destination is covered; optional fields are listed as comments. `cartage validate --env <env>` names every
 placeholder still to fill.
@@ -100,7 +100,7 @@ Generating Airflow, Dagster or Prefect files needs nothing extra; the orchestrat
 ## Engines
 
 The engine runs a pipeline: it reads from the source, applies your transforms, and hands records to the destination.
-Set it in `cartage.yaml` (`defaults.engine`), per pipeline (`engine:`), or per run (`--engine`).
+Set it in `.cartage/config.yaml` (`defaults.engine`), per pipeline (`engine:`), or per run (`--engine`).
 
 - **`dlt`** (default) runs every pipeline as a dlt pipeline: dlt's extraction, normalization, incremental state and
   loading. dlt destinations load natively (bulk loads, staging, merge); record destinations (`sap_bapi`,
@@ -135,20 +135,21 @@ Global options go before the command: `-C/--project-dir`, `-v/--verbose`, `--deb
 
 | Path                          | Purpose                                                                      |
 | ----------------------------- | ---------------------------------------------------------------------------- |
-| `cartage.yaml`                | environments, default engine, state location, orchestrator settings          |
-| `connections.yaml`            | named connections with settings per environment — secrets only as references |
+| `.cartage/config.yaml`        | environments, default engine, state location, orchestrator settings          |
+| `.cartage/connections.yaml`   | named connections with settings per environment — secrets only as references |
 | `pipelines/*.yaml`            | source → transforms → destination(s) (+ schedule)                            |
 | `transforms/*.py`             | `map` / `filter` / `batch` functions referenced as `module:function`         |
 | `templates/airflow/dag.py.j2` | optional DAG template override (`{% extends "cartage/airflow_dag.py.j2" %}`) |
 | `templates/<target>/...`      | optional Dagster/Prefect overrides (`dagster.py.j2`, `prefect.py.j2`)        |
-| `.cartage/`                   | git-ignored: `secrets.yaml`, `state/`, `rejects/`                            |
+| `.cartage/secrets.yaml`, `state/`, `rejects/` | git-ignored: secrets, local state, rejected records             |
+| `~/.cartage/secrets.yaml`     | optional secrets shared by every project (like dlt's `~/.dlt/secrets.toml`) |
 
 ## YAML configuration
 
-Cartage uses three YAML layers: `cartage.yaml` sets project-wide defaults, `connections.yaml` defines named services
+Cartage uses three YAML layers: `.cartage/config.yaml` sets project-wide defaults, `.cartage/connections.yaml` defines named services
 per environment, and each `pipelines/*.yaml` file describes one flow from a source to one or more destinations.
 
-### `cartage.yaml`
+### `.cartage/config.yaml`
 
 ```yaml
 project: inventory
@@ -170,7 +171,7 @@ orchestrators:
 The `default_env` must be listed in `environments`. A pipeline can override the default engine with its own `engine`.
 State settings are optional; when omitted, Cartage stores local state under `.cartage/state`.
 
-### `connections.yaml`
+### `.cartage/connections.yaml`
 
 Connections have a `type` and an `envs` map. Put service-specific settings under the environment where they apply;
 pipelines refer to the connection by name. Keep credentials out of the file and use secret or environment references.
@@ -202,10 +203,10 @@ connections:
 ```
 
 `${secret:key}` resolves from `CARTAGE_SECRET__<KEY>` (dots become double underscores and names are uppercased),
-then `.cartage/secrets.yaml`. `${env:NAME}` reads an environment variable directly. See [Secrets](#secrets) for details.
+then `.cartage/secrets.yaml`, then `~/.cartage/secrets.yaml`. `${env:NAME}` reads an environment variable directly. See [Secrets](#secrets) for details.
 
 **[docs/connections.md](docs/connections.md) lists every connection type** (`filesystem`, the dlt destinations,
-`file_export`, `sap_bapi`): which settings go in `connections.yaml` and which options go in the pipeline.
+`file_export`, `sap_bapi`): which settings go in `.cartage/connections.yaml` and which options go in the pipeline.
 
 ### `pipelines/*.yaml`
 
@@ -439,7 +440,7 @@ destinations:
 
 `cartage generate --target airflow|dagster|prefect` writes one file per pipeline that has a `schedule.<target>` block.
 Each file only runs `cartage --project-dir <project> run <pipeline> --env <env>`, so deploy the Cartage project (with
-`transforms/`) next to it. Settings merge: built-in defaults ← `orchestrators.<target>` in `cartage.yaml` ← the
+`transforms/`) next to it. Settings merge: built-in defaults ← `orchestrators.<target>` in `.cartage/config.yaml` ← the
 pipeline's `schedule.<target>` (dicts merge by key). Add `--check` in CI to fail on stale files.
 
 ```yaml
@@ -468,7 +469,7 @@ schedule:
 ### Airflow settings
 
 ```yaml
-# cartage.yaml
+# .cartage/config.yaml
 orchestrators:
   airflow:
     task_decorator: datacoves_bash
@@ -484,7 +485,7 @@ schedule:
     default_args: { owner: Noel Gomez, email: [noel@example.com] }
 ```
 
-- `dependencies` from `cartage.yaml` and the pipeline add up (every other list replaces) and become `--with`
+- `dependencies` from `.cartage/config.yaml` and the pipeline add up (every other list replaces) and become `--with`
   flags right after a `uvx`, `uv tool run` or `uv run` command: `uvx --with 'dlt[snowflake,parquet]' --with 'dlt[http]'
   --from 'cartage>=0.8.0' cartage`.
 - `default_args` merge by key, so the owner and email can be set once and overridden per pipeline.
@@ -508,7 +509,7 @@ schedule:
 In Airflow, credentials usually live in Airflow connections. Cartage reads them with `${airflow:...}` references, so
 nothing has to copy them into variables by hand and they never appear in YAML or in the generated DAG.
 
-**1. Reference connection fields** in `connections.yaml`, in the environment the DAGs run (the `cartage_env` Airflow
+**1. Reference connection fields** in `.cartage/connections.yaml`, in the environment the DAGs run (the `cartage_env` Airflow
 variable, `prd` by default):
 
 ```yaml
@@ -569,8 +570,14 @@ Notes:
 
 ## Secrets
 
-`${secret:sap.passwd}` reads `CARTAGE_SECRET__SAP__PASSWD`, then `.cartage/secrets.yaml` (git-ignored; the dots are
-nesting levels). `${env:VAR}` reads an environment variable. Resolved values are never printed.
+`${secret:sap.passwd}` reads `CARTAGE_SECRET__SAP__PASSWD`, then the project's `.cartage/secrets.yaml` (git-ignored),
+then `~/.cartage/secrets.yaml` in your home folder, for secrets several projects share (the project file wins on a
+key both have). The dots are nesting levels. Resolved values are never printed.
+
+`${env:VAR}` reads an environment variable, and `${env:VAR:-default}` falls back to a default when it is not set. It
+works in every file: `.cartage/config.yaml` and `answers.yaml` (filled in when the file is read), connection settings,
+pipeline options, transform `with:` values and `schedule` settings (filled in when used, so a variable only `prd`
+needs doesn't break `dev`), and secret values (`token: "${env:API_TOKEN}"` in `secrets.yaml`).
 
 ```yaml
 # .cartage/secrets.yaml
@@ -578,7 +585,7 @@ sap: { user: rfc_user, passwd: "..." }
 snowflake: { connection_string: "snowflake://user:...@account/db?warehouse=wh&role=r" }
 ```
 
-dlt destinations can also leave credentials out of `connections.yaml` entirely: dlt then reads its own
+dlt destinations can also leave credentials out of `.cartage/connections.yaml` entirely: dlt then reads its own
 `.dlt/secrets.toml` (in the working directory) or `~/.dlt/secrets.toml` (e.g. `destination_name: my_snowflake` reads
 `[destination.my_snowflake.credentials]`).
 
@@ -594,7 +601,7 @@ the new cursor land together, and rejected records stay in the rejects file. `--
 tables and state, then loads again.
 
 dlt cannot keep state in SAP or in a file export, so those pipelines use Cartage's state store. It is saved only when a
-run has no record errors (or with `--advance-state`), and it lives in `.cartage/state` unless `cartage.yaml` points an
+run has no record errors (or with `--advance-state`), and it lives in `.cartage/state` unless `.cartage/config.yaml` points an
 environment at a `filesystem` connection: `state: { prd: { connection: landing, prefix: cartage/state/ } }` (S3, GCS,
 Azure, ...). Local state is lost on orchestrator workers, so `cartage generate` refuses a SAP or file export pipeline
 whose environment keeps it on local disk. `--full-refresh` ignores the stored state.
