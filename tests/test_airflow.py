@@ -3,6 +3,7 @@ import os
 import shlex
 import subprocess
 import sys
+import textwrap
 
 from typer.testing import CliRunner
 
@@ -37,9 +38,15 @@ def test_generates_valid_thin_dag(project):
     assert "tags=['cartage']" in content
     assert "default_args = {'owner': 'data-team', 'retries': 1}" in content
     assert (
-        """return 'cartage' + " --project-dir " + shlex.quote(PROJECT_DIR) + " run " + """
-        """"pipelines/materials.yaml --env {{ var.value.get('cartage_env', 'prd') }}"\n"""
+        "        command = [\n"
+        "            'cartage',\n"
+        '            "--project-dir", shlex.quote(PROJECT_DIR),\n'
+        "            \"run\", 'pipelines/materials.yaml',\n"
+        "            \"--env\", \"{{ var.value.get('cartage_env', 'prd') }}\",\n"
+        "        ]\n"
+        '        return " ".join(command)\n'
     ) in content
+    assert max(len(line) for line in content.splitlines()) <= 120
     assert "os.path.dirname(__file__), '..'" in content
     assert "k8s" not in content
 
@@ -160,13 +167,10 @@ CLEAN_CSV = "material,industry,type,description,uom,status\n100001,M,FERT,Pump h
 def test_generated_bash_command_runs(project):
     """Rebuild the DAG's bash_command as Airflow would (no Airflow needed) and run it."""
     (project / "data/sample/materials.csv").write_text(CLEAN_CSV)
-    line = next(
-        l
-        for l in generate(project).splitlines()
-        if l.strip().startswith("return ")
-    )
-    expr = line.strip().removeprefix("return ")
-    command = eval(expr, {"shlex": shlex, "PROJECT_DIR": str(project)})
+    body = generate(project).split("    def cartage_run():\n", 1)[1].split("\n\n", 1)[0]
+    scope = {"shlex": shlex, "PROJECT_DIR": str(project)}
+    exec(textwrap.dedent(body).replace("return ", "bash_command = "), scope)  # noqa: S102
+    command = scope["bash_command"]
     command = command.replace("{{ var.value.get('cartage_env', 'prd') }}", "dev")
     env = {
         **os.environ,
@@ -191,7 +195,8 @@ def test_airflow_connection_references_become_task_env(project):
 
     compile(content, DAG, "exec")
     assert "'CARTAGE_AIRFLOW__SAP_CONN__SCHEMA': \"{{ conn.get('sap_conn').schema or '' }}\"" in content
-    assert "'CARTAGE_AIRFLOW__SAP_CONN__EXTRA__USER__NAME': \"{{ conn.get('sap-conn').extra_dejson['user']['name'] or '' }}\"" in content
+    assert ("            'CARTAGE_AIRFLOW__SAP_CONN__EXTRA__USER__NAME':\n"  # too long for one line: value below
+            "                \"{{ conn.get('sap-conn').extra_dejson['user']['name'] or '' }}\",\n") in content
     assert "'UV_CACHE_DIR': '/tmp/uv_cache'" in content and "append_env=True," in content
     assert "other" not in content  # only connections this pipeline uses
 

@@ -8,7 +8,7 @@ from typing import Any
 
 from ruamel.yaml import YAML
 
-from cartage import registry
+from cartage import registry, scaffold
 from cartage.adapters.destinations.sap.meta import available as available_bapis
 from cartage.adapters.destinations.sap.meta import load_meta
 from cartage.core import CartageError
@@ -268,25 +268,6 @@ def _project(a: InitAnswers, real: list[str]) -> str:
     return "\n".join([*lines, ""])
 
 
-TRANSFORMS_STUB = '''"""Transforms for the {name} pipeline: referenced from pipelines/{name}.yaml as transforms.{name}:<function>."""
-
-
-def example(record):
-    """map: return the record, changed. A filter returns True to keep it; a batch gets and returns a list."""
-    return record
-'''
-
-SOURCE_STUB = '''"""Source for the {name} pipeline: yield records (dicts), lists of them, or Arrow/pandas batches."""
-import dlt
-
-
-@dlt.resource(name="{name}")
-def {function}():
-    # Replace with your extraction: an API call, a database query, a file parser, ...
-    yield [{{"id": 1, "name": "example"}}]
-'''
-
-
 def plan_project(a: InitAnswers, fetched: dict[str, bytes]) -> dict[str, bytes]:
     if a.destination not in registry.connection_types() and not registry.is_dlt_destination(a.destination):
         raise CartageError(f"Unknown destination '{a.destination}'",
@@ -300,12 +281,12 @@ def plan_project(a: InitAnswers, fetched: dict[str, bytes]) -> dict[str, bytes]:
     files[".cartage/secrets.yaml"] = secrets.text()
     copied_transforms = any(path.startswith("transforms/") for path in fetched)
     if not copied_transforms:
-        files[f"transforms/{a.pipeline_name}.py"] = TRANSFORMS_STUB.format(name=a.pipeline_name)
+        files[f"transforms/{a.pipeline_name}.py"] = scaffold.TRANSFORMS_STUB.format(name=a.pipeline_name)
     if "transforms/__init__.py" not in fetched:
         files["transforms/__init__.py"] = ""
     if a.source == "python":
         files["sources/__init__.py"] = ""
-        files[f"sources/{a.pipeline_name}.py"] = SOURCE_STUB.format(name=a.pipeline_name, function=a.python.function)
+        files[f"sources/{a.pipeline_name}.py"] = scaffold.SOURCE_STUB.format(name=a.pipeline_name, function=a.python.function)
     out = {path: text.encode() for path, text in files.items()}
     clashes = sorted(set(fetched) & set(out))
     if clashes:

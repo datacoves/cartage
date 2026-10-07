@@ -47,6 +47,34 @@ def _check_literal(name: str, value: Any, target: str = "Airflow") -> None:
         raise CartageError(f"{target} setting '{name}' contains a {type(value).__name__} value; quote it in YAML")
 
 
+WIDTH = 100  # generated files wrap dicts, lists and calls longer than this
+
+
+def py_wrapped(value: Any, indent: int = 0) -> str:
+    """repr(value), or one item per line (at `indent`) when it does not fit on a line."""
+    text = repr(value)
+    if indent + len(text) <= WIDTH or not isinstance(value, dict | list) or not value:
+        return text
+    pad = " " * (indent + 4)
+    if isinstance(value, dict):  # an entry that is still too long gets its value on the next line
+        entries = (f"{pad}{k!r}: {v!r},\n" if len(pad) + len(f"{k!r}: {v!r},") <= WIDTH else f"{pad}{k!r}:\n{pad}    {v!r},\n"
+                   for k, v in value.items())
+        return "{\n" + "".join(entries) + " " * indent + "}"
+    return "[\n" + "".join(f"{pad}{v!r},\n" for v in value) + " " * indent + "]"
+
+
+def py_kwargs(mapping: dict, indent: int = 0) -> str:
+    """Keyword arguments of a call, `(a=1, b=2)`, one per line when they do not fit on a line."""
+    text = "(" + ", ".join(f"{k}={v!r}" for k, v in mapping.items()) + ")"
+    if indent + len(text) <= WIDTH or not mapping:
+        return text
+    return "(\n" + "".join(f"{' ' * (indent + 4)}{k}={v!r},\n" for k, v in mapping.items()) + " " * indent + ")"
+
+
+def jinja_filters(env) -> None:
+    env.filters.update(py=repr, pyw=py_wrapped, kwargs=py_kwargs)
+
+
 def merge(base: dict, override: dict) -> dict:
     """Scalars and lists replace; dicts merge by key."""
     out = dict(base)
@@ -128,7 +156,9 @@ class AirflowOrchestrator:
             "image": s["image"],
             "project_dir": s["project_dir"] or Path(os.path.relpath(project.root, dags_dir)).as_posix(),
             "command": s["command"],  # global options (--project-dir) must come before `run`, so the template assembles it
-            "run_args": f"{shlex.quote(rel)} --env {env_expr}",
+            "run_args": f"{shlex.quote(rel)} --env {env_expr}",  # run_target + --env + env_expr, for older overrides
+            "run_target": shlex.quote(rel),
+            "env_expr": env_expr,
             "task_env": self.task_env(project, pipeline, s),
         }
 
@@ -138,7 +168,7 @@ class AirflowOrchestrator:
                                  PackageLoader("cartage.adapters.orchestrators", "templates")]),
             trim_blocks=True, lstrip_blocks=True, keep_trailing_newline=True, undefined=StrictUndefined, autoescape=False,
         )
-        env.filters["py"] = repr
+        jinja_filters(env)
         template = env.select_template(["dag.py.j2", "cartage/airflow_dag.py.j2"])
         files: dict[Path, str] = {}
         for pipeline in pipelines:

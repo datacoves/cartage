@@ -10,7 +10,7 @@ from typing import Any, ClassVar
 from jinja2 import ChoiceLoader, Environment, FileSystemLoader, PackageLoader, StrictUndefined
 
 from cartage import __version__
-from cartage.adapters.orchestrators.airflow import _check_literal, merge
+from cartage.adapters.orchestrators.airflow import _check_literal, jinja_filters, merge
 from cartage.core import CartageError
 from cartage.secrets import expand_env
 
@@ -60,7 +60,7 @@ class ScriptOrchestrator:
                                  PackageLoader("cartage.adapters.orchestrators", "templates")]),
             trim_blocks=True, lstrip_blocks=True, keep_trailing_newline=True, undefined=StrictUndefined, autoescape=False,
         )
-        env.filters["py"] = repr
+        jinja_filters(env)
         template = env.select_template([f"{self.target}.py.j2", f"cartage/{self.target}.py.j2"])
         files: dict[Path, str] = {}
         for pipeline in pipelines:

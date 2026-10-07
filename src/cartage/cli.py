@@ -23,6 +23,7 @@ from cartage.init.answers import Origin, fetch_files, load_answers
 from cartage.init.plan import placeholders, plan_project
 from cartage.init.questions import ask
 from cartage.runner import prepare_all, preview, run_pipeline
+from cartage.scaffold import KINDS, scaffold
 from cartage.secrets import Secrets, mask
 
 app = typer.Typer(
@@ -327,6 +328,20 @@ def generate(
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content, encoding="utf-8")
         ui.generated(project, files)
+
+
+@app.command("scaffold")
+def scaffold_command(
+    kind: str = typer.Argument(..., help=f"What to write: {', '.join(KINDS)}."),
+    name: str | None = typer.Argument(None, help="Module name, for transform and source."),
+) -> None:
+    """Write a file to edit: an orchestrator template override (every block, rendering the default until changed),
+    or a transform or source module with examples."""
+    with ui.handle_errors(OPTS.debug):
+        project = load_project(OPTS.project_dir)
+        written = scaffold(project.root, kind, name)
+    for path in written:
+        ui.console.print(ui.Text.assemble(("✔ ", "green"), "wrote ", (project.rel(path), "bold")))
 
 
 @sap_app.command("mock")

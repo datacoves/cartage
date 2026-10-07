@@ -30,7 +30,7 @@ A pipeline can also replace its whole source in one environment with `source.env
 
 Any setting can be a reference instead of a literal: `${secret:key}`, `${env:NAME}` (or `${env:NAME:-default}`) or
 `${airflow:<conn_id>.<field>}`
-(see the README's [Secrets](../README.md#secrets) and [Airflow connections](../README.md#airflow-connections)).
+(see [Secrets](secrets-and-state.md#secrets) and [Airflow connections](orchestrators.md#airflow-connections)).
 Pipeline `with:` values can use them too.
 
 | Type                                         | Provided by | Source | Destination              | Holds state | Install                         |
@@ -42,14 +42,14 @@ Pipeline `with:` values can use them too.
 | [`ref:`](#dlt-sources-ref) (no connection)   | dlt         |   ✔    |                          |             | whatever the source needs       |
 
 dlt destinations keep their own state, as in any dlt project. SAP and file exports can't, so their state goes to
-Cartage's state store: a `filesystem` connection (see the README's [State and rejects](../README.md#state-and-rejects)).
+Cartage's state store: a `filesystem` connection (see [State and rejects](secrets-and-state.md#state-and-rejects)).
 
 `cartage plugins` lists the installed Cartage types and every dlt destination type; `cartage connections list` shows a
 project's connections and `cartage connections test <name>` checks one. dlt destination names are reserved, so a
 Cartage plug-in can never shadow one.
 
 Every destination also takes `name` in the pipeline: it tells apart two destinations on the same connection (see
-[Multiple destinations](../README.md#multiple-destinations)).
+[Multiple destinations](configuration.md#multiple-destinations)).
 
 ## `filesystem`
 
@@ -113,7 +113,7 @@ Everything goes in the pipeline; credentials go in `with:` as references.
 | `incremental`            | none         | `{ cursor: updated_at, initial: "2024-01-01" }`, plus any `dlt.sources.incremental` option: `lag`, `end_value`, `primary_key`, `row_order`, `last_value_func`, `on_cursor_value_missing`, `range_start`, `range_end` (dlt engine) |
 | `batch_size`             | `100`        | records per batch (python engine and record destinations)                     |
 
-See the README's [Generic sources](../README.md#generic-sources-no-python) for REST APIs without Python.
+See [Generic sources](configuration.md#generic-sources-no-python) for REST APIs without Python.
 
 ## `file_export`
 
