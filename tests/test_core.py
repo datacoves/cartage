@@ -1,7 +1,7 @@
 import typer
 from typer.testing import CliRunner
 
-from cartage import ui
+from cartage import __version__, ui
 from cartage.cli import app
 from cartage.core import (
     BatchResult,
@@ -17,7 +17,7 @@ runner = CliRunner()
 def test_version():
     result = runner.invoke(app, ["--version"])
     assert result.exit_code == 0
-    assert "cartage 0.11.2" in result.output
+    assert f"cartage {__version__}" in result.output
 
 
 def _app_raising(error, debug=False):
