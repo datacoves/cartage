@@ -99,7 +99,11 @@ class DltEngine:
             try:
                 pipeline.run(piped, schema=schema, loader_file_format=file_format, refresh=refresh)
             except Exception as e:
-                error = fatal[0] if fatal else FatalRunError(f"dlt pipeline failed: {e}")
+                hint = None
+                if "_DLT_LOAD_ID" in str(e).upper() and "non-empty table" in str(e):
+                    hint = ("The destination table already holds rows dlt didn't write (an engine: python run or "
+                            "another tool). Re-run with --full-refresh to drop and reload it, or load into a new table.")
+                error = fatal[0] if fatal else FatalRunError(f"dlt pipeline failed: {e}", hint=hint)
                 if isinstance(error, FatalRunError):
                     error.result = result
                 raise error from e
