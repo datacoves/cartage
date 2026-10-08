@@ -7,6 +7,7 @@ import shutil
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
+from typing import ClassVar
 from unittest.mock import patch
 
 import dlt
@@ -28,7 +29,7 @@ def native_pipeline(name: str, destination, dlt_dir: Path, progress=None):
 class StageCollector(NullCollector):
     """Reports which dlt step is running (dlt calls _start with "Extract <source>", "Normalize ...", "Load ...")."""
 
-    STAGES = {"Extract": "reading", "Normalize": "normalizing", "Load": "loading"}
+    STAGES: ClassVar[dict[str, str]] = {"Extract": "reading", "Normalize": "normalizing", "Load": "loading"}
 
     def __init__(self, result: RunResult, on_progress: Callable[[RunResult], None]):
         self.result, self.on_progress = result, on_progress

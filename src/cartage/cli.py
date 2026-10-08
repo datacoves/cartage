@@ -47,7 +47,7 @@ def _completion_project(ctx: typer.Context):
     project_dir = ctx.find_root().params.get("project_dir")  # completion leaves it unconverted: a str
     try:
         return load_project(Path(project_dir) if project_dir else None)
-    except Exception:
+    except CartageError:
         return None
 
 
