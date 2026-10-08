@@ -81,6 +81,9 @@ placeholder still to fill.
 An answers file can also carry pipeline content: `transforms`, `destination_options` and `copy` (files to copy, relative
 to the answers file). [`examples/sap/answers.yaml`](examples/sap/answers.yaml) builds the demo above this way.
 
+`--secrets-home` puts the secret placeholders in `~/.cartage/secrets.yaml` instead of the project, for secrets several
+projects share. Keys already in that file are kept as they are, so a connection filled by an earlier project is reused.
+
 ## Install
 
 Cartage needs Python 3.11.4 or newer. dlt is included; extras add the rest.
@@ -103,7 +106,7 @@ also list the packages it needs, and `cartage run` adds them with uv: see
 
 | Command                                           | Does                                                                  |
 | ------------------------------------------------- | --------------------------------------------------------------------- |
-| `cartage init <dir> [--answers <file-or-url>] [--yes]` | create a project from questions or an answers file           |
+| `cartage init <dir> [--answers <file-or-url>] [--yes] [--secrets-home]` | create a project from questions or an answers file |
 | `cartage validate [pipelines...]`                 | check YAML, connections, secrets, transforms and mappings; moves no data |
 | `cartage plan <pipeline> [-n 3]`                  | dry run: each record before/after transforms (or why it was dropped), and the payloads |
 | `cartage run <pipeline>`                          | run it; `--env`, `--engine`, `--full-refresh`, `--advance-state`, `--no-deps`, `--json` |

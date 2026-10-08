@@ -84,3 +84,16 @@ def test_answers_take_env_references(tmp_path, monkeypatch):
     monkeypatch.setenv("PROJECT_NAME", "demo")
     loaded, _, _ = load_answers(str(answers))
     assert (loaded.project, loaded.pipeline) == ("demo", "materials")
+
+
+def test_secrets_home_adds_missing_keys_to_the_home_file(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    home = tmp_path / "home" / ".cartage" / "secrets.yaml"
+    home.parent.mkdir(parents=True)
+    home.write_text("# mine\nwarehouse:\n  dev:\n    password: s3cret\n")
+    (tmp_path / "a.yaml").write_text("destination: postgres\nenvironments: [dev, prd]\n")
+    result = init(str(tmp_path / "p"), "--answers", str(tmp_path / "a.yaml"), "--yes", "--secrets-home")
+    assert result.exit_code == 0, result.output
+    assert not (tmp_path / "p" / ".cartage" / "secrets.yaml").exists()
+    text = home.read_text()
+    assert "# mine" in text and "password: s3cret" in text and "prd:" in text

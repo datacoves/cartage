@@ -1,10 +1,15 @@
 """cartage init: create a project from answers (prompts, an answers file, or both)."""
 from __future__ import annotations
 
+import io
 from pathlib import Path
+
+from ruamel.yaml import YAML
+from ruamel.yaml.error import YAMLError
 
 from cartage.config import PROJECT_FILE
 from cartage.core import CartageError
+from cartage.secrets import SECRETS_FILE
 
 ALWAYS_WRITTEN = (PROJECT_FILE, ".cartage/connections.yaml", ".gitignore", ".cartage/secrets.yaml")
 
@@ -40,3 +45,40 @@ def write_project(dest: Path, files: dict[str, bytes]) -> list[Path]:
             path.unlink(missing_ok=True)
         raise CartageError(f"Cannot write {target}: {e}", hint="Nothing was kept; fix the folder and run init again") from e
     return targets
+
+
+def _add_missing(into: dict, new: dict) -> None:
+    for key, value in new.items():
+        if isinstance(into.get(key), dict) and isinstance(value, dict):
+            _add_missing(into[key], value)
+        elif key not in into:
+            into[key] = value
+
+
+def merge_home_secrets(text: str, home: Path | None = None) -> tuple[Path, bytes]:
+    """Add the planned placeholders to ~/.cartage/secrets.yaml. Keys already there (filled by an earlier project)
+    are kept as they are, and so are the file's comments."""
+    path = (home or Path.home()) / SECRETS_FILE
+    if not path.is_file():
+        merged = text.encode()
+    else:
+        yaml = YAML()  # round-trip: keeps the existing file's comments
+        try:
+            existing = yaml.load(path.read_text(encoding="utf-8"))
+        except YAMLError as e:
+            raise CartageError(f"~/{SECRETS_FILE.as_posix()}: invalid YAML: {e}") from e
+        if not isinstance(existing, dict | None):
+            raise CartageError(f"~/{SECRETS_FILE.as_posix()} must contain a mapping")
+        if existing is None:
+            existing = yaml.load("{}")
+        # ponytail: commented-out placeholders (optional fields, auth alternatives) may not survive the merge
+        _add_missing(existing, yaml.load(text) or {})
+        buffer = io.StringIO()
+        yaml.dump(existing, buffer)
+        merged = buffer.getvalue().encode()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(merged)
+    except OSError as e:
+        raise CartageError(f"Cannot write {path}: {e}") from e
+    return path, merged

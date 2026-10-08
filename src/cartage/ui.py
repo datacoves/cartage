@@ -82,7 +82,7 @@ def init_done(directory: Path, created: list[Path], placeholders: list[str], pip
     body = Text()
     body.append(f"Created {len(created)} files in {directory}\n\n", style="green")
     if placeholders:
-        body.append('Fill in every "<fill me>" (secrets go in .cartage/secrets.yaml):\n', style="bold")
+        body.append('Fill in every "<fill me>" (secrets go in secrets.yaml):\n', style="bold")
         for where in placeholders:
             body.append(f"  {where}\n", style="yellow")
         body.append("\n")

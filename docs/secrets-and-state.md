@@ -6,7 +6,8 @@ Where secrets come from, and how incremental state and rejected records are kept
 
 `${secret:sap.passwd}` reads `CARTAGE_SECRET__SAP__PASSWD`, then the project's `.cartage/secrets.yaml` (git-ignored),
 then `~/.cartage/secrets.yaml` in your home folder, for secrets several projects share (the project file wins on a
-key both have). The dots are nesting levels. Resolved values are never printed.
+key both have). The dots are nesting levels. Resolved values are never printed. `cartage init --secrets-home` writes
+its placeholders to the home file, adding only the keys it doesn't have yet.
 
 `${env:VAR}` reads an environment variable, and `${env:VAR:-default}` falls back to a default when it is not set. It
 works in every file: `.cartage/config.yaml` and `answers.yaml` (filled in when the file is read), connection settings,

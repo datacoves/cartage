@@ -18,7 +18,7 @@ from cartage.adapters.destinations.sap.transports.mock import make_server
 from cartage.checks import check_pipeline
 from cartage.config import load_project
 from cartage.core import CartageError, FatalRunError
-from cartage.init import refuse_existing, write_project
+from cartage.init import merge_home_secrets, refuse_existing, write_project
 from cartage.init.answers import Origin, fetch_files, load_answers
 from cartage.init.plan import placeholders, plan_project
 from cartage.init.questions import ask
@@ -78,6 +78,8 @@ def init(
     answers: str | None = typer.Option(None, "--answers", help="Answers file (a path or an http(s) URL); "
                                                                 "its answers are not asked."),
     yes: bool = typer.Option(False, "--yes", "-y", help="Take the defaults for every question not answered."),
+    secrets_home: bool = typer.Option(False, "--secrets-home", help="Add the secret placeholders to "
+                                      "~/.cartage/secrets.yaml (keeping keys already there) instead of the project."),
 ) -> None:
     """Create a project: asks about environments, the source, the destination and scheduling, then writes it."""
     with ui.handle_errors(OPTS.debug):
@@ -86,7 +88,12 @@ def init(
         final = ask(loaded, answered, directory.resolve().name, yes, ui.console)
         fetched = fetch_files(final, origin, origin if "sample_data" in answered else Origin.cwd())
         files = plan_project(final, fetched)
+        secrets = files.pop(".cartage/secrets.yaml") if secrets_home else None
         created = write_project(directory, files)
+        if secrets is not None:
+            home_file, merged = merge_home_secrets(secrets.decode())
+            created.append(home_file)
+            files["~/.cartage/secrets.yaml"] = merged
         if origin.is_url:
             ui.console.print(f"Fetched from {origin.base}: {', '.join(sorted(fetched)) or 'nothing else'}")
     ui.init_done(directory, created, placeholders(files), final.pipeline_name)
