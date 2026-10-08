@@ -252,10 +252,10 @@ def _state(a: InitAnswers, real: list[str]) -> list[str]:
     remote = real if a.source == "files" else []
     lines = ["", "# State for SAP and file export runs (dlt destinations keep theirs in the destination).",
              "# Orchestrated environments need a filesystem connection: local state is lost on remote workers."]
+    lines.append("# Other environments keep it in artifacts_dir (default .cartage; e.g. ~/.cartage/<project>).")
     if not remote:
-        lines.append("# e.g. prd: {connection: <a filesystem connection>, prefix: cartage/state/}")
-    return [*lines, "state:", *[f"  {e}: {{connection: landing, prefix: cartage/state/}}" if e in remote
-                                else f"  {e}: {{path: .cartage/state}}" for e in a.environments]]
+        return [*lines, "# e.g. state: {prd: {connection: <a filesystem connection>, prefix: cartage/state/}}"]
+    return [*lines, "state:", *[f"  {e}: {{connection: landing, prefix: cartage/state/}}" for e in remote]]
 
 
 def _project(a: InitAnswers, real: list[str]) -> str:

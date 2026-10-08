@@ -17,8 +17,10 @@ default_env: dev
 defaults:
   engine: dlt # or python
 
+artifacts_dir: ~/.cartage/inventory # optional: local state and rejects (default .cartage, in the project)
+
 state:
-  dev: { path: .cartage/state }
+  prd: { connection: landing, prefix: cartage/state/ }
 
 orchestrators:
   airflow:
@@ -27,7 +29,9 @@ orchestrators:
 ```
 
 The `default_env` must be listed in `environments`. A pipeline can override the default engine with its own `engine`.
-State settings are optional; when omitted, Cartage stores local state under `.cartage/state`.
+State settings are optional; an environment without one keeps local state in `<artifacts_dir>/state`. Rejected
+records always go to `<artifacts_dir>/rejects`. `artifacts_dir` defaults to `.cartage` in the project; point it
+outside (`~/.cartage/<project>`, or `${env:HOME}/...`) to keep those files out of the repository.
 
 ### `.cartage/connections.yaml`
 

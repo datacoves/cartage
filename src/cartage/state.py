@@ -110,8 +110,8 @@ def new_run_id() -> str:
     return datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
 
 
-def write_rejects(root: Path, pipeline: str, run_id: str, errors: list[RecordError]) -> Path:
-    path = root / ".cartage" / "rejects" / pipeline / f"{run_id}.jsonl"
+def write_rejects(artifacts_dir: Path, pipeline: str, run_id: str, errors: list[RecordError]) -> Path:
+    path = artifacts_dir / "rejects" / pipeline / f"{run_id}.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
         for error in errors:

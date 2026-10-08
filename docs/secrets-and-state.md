@@ -36,12 +36,13 @@ the new cursor land together, and rejected records stay in the rejects file. `--
 tables and state, then loads again.
 
 dlt cannot keep state in SAP or in a file export, so those pipelines use Cartage's state store. It is saved only when a
-run has no record errors (or with `--advance-state`), and it lives in `.cartage/state` unless `.cartage/config.yaml` points an
+run has no record errors (or with `--advance-state`), and it lives in `<artifacts_dir>/state` (`.cartage/state` by default, see
+[`artifacts_dir`](configuration.md#cartageconfigyaml)) unless `.cartage/config.yaml` points an
 environment at a `filesystem` connection: `state: { prd: { connection: landing, prefix: cartage/state/ } }` (S3, GCS,
 Azure, ...). Local state is lost on orchestrator workers, so `cartage generate` refuses a SAP or file export pipeline
 whose environment keeps it on local disk. `--full-refresh` ignores the stored state.
 
-Rejected records go to `.cartage/rejects/<pipeline>/<run_id>.jsonl`. `cartage state show|reset <pipeline>` inspects
+Rejected records go to `<artifacts_dir>/rejects/<pipeline>/<run_id>.jsonl`. `cartage state show|reset <pipeline>` inspects
 or clears state, wherever it lives.
 
 With several destinations, each destination is its own run named `<pipeline>__<name>`: state, rejects and the

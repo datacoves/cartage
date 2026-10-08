@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -48,7 +49,7 @@ def test_unknown_engine(project):
 
 def test_state_connection_must_support_state(project):
     (project / ".cartage/config.yaml").write_text((project / ".cartage/config.yaml").read_text().replace(
-        "dev: {path: .cartage/state}", "dev: { connection: sap }"))
+        "state:\n", "state:\n  dev: { connection: sap }\n"))
     with pytest.raises(CartageError, match="cannot store state"):
         prepare(load_project(project), "materials", engine="python")
 
@@ -67,3 +68,14 @@ def test_fatal_run_writes_partial_rejects_and_keeps_state(project):
         run_pipeline(prep, advance_state=True)
     assert len(Path(info.value.result.rejects_path).read_text().splitlines()) == 1
     assert not (project / STATE).exists()
+
+
+def test_artifacts_dir_moves_state_and_rejects_out_of_the_project(project, tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    config = project / ".cartage/config.yaml"
+    config.write_text(re.sub(r"(?m)^state:\n(  .*\n)*", "", config.read_text()) + "artifacts_dir: ~/.cartage/demo\n")
+    result = run(project, advance_state=True)
+    local = tmp_path / "home" / ".cartage" / "demo"
+    assert (local / "state/materials/dev/state.json").exists()
+    assert Path(result.rejects_path).parent == local / "rejects" / "materials"
+    assert not (project / ".cartage/state").exists() and not (project / ".cartage/rejects").exists()

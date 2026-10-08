@@ -26,6 +26,8 @@ from cartage.runner import prepare_all, preview, run_pipeline
 from cartage.scaffold import KINDS, scaffold
 from cartage.secrets import Secrets, mask
 
+sys.dont_write_bytecode = True  # importing the project's transforms and sources must not leave __pycache__ in it
+
 app = typer.Typer(
     name="cartage",
     help="Declarative data migrations: YAML pipelines, Python transforms, any engine, any orchestrator.",

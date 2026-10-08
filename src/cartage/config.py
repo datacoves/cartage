@@ -43,6 +43,7 @@ class ProjectConfig(BaseModel):
     environments: list[str] = Field(min_length=1)
     default_env: str
     defaults: Defaults = Field(default_factory=Defaults)
+    artifacts_dir: str = ".cartage"  # where runs keep local state and rejects; ~/.cartage/<project> keeps them out of the repo
     state: dict[str, StateConfig] = Field(default_factory=dict)
     orchestrators: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
@@ -230,6 +231,11 @@ class Project:
     config: ProjectConfig
     connections: dict[str, Connection]
     raw_connections: Any
+
+    @property
+    def artifacts_dir(self) -> Path:
+        """Where runs keep local state and rejects; a relative path is relative to the project."""
+        return self.root / Path(self.config.artifacts_dir).expanduser()
 
     def rel(self, path: Path) -> str:
         try:

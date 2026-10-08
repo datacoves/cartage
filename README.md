@@ -134,7 +134,7 @@ Global options go before the command: `-C/--project-dir`, `-v/--verbose`, `--deb
 | `transforms/*.py`             | `map` / `filter` / `batch` functions referenced as `module:function`         |
 | `templates/airflow/dag.py.j2` | optional DAG template override (`{% extends "cartage/airflow_dag.py.j2" %}`) |
 | `templates/<target>/...`      | optional Dagster/Prefect overrides (`dagster.py.j2`, `prefect.py.j2`)        |
-| `.cartage/secrets.yaml`, `state/`, `rejects/` | git-ignored: secrets, local state, rejected records             |
+| `.cartage/secrets.yaml`, `state/`, `rejects/` | git-ignored: secrets, local state, rejected records (`artifacts_dir` moves the last two) |
 | `~/.cartage/secrets.yaml`     | optional secrets shared by every project (like dlt's `~/.dlt/secrets.toml`) |
 
 ## Exit codes

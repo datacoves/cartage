@@ -78,8 +78,8 @@ def run(project, *args):
 def test_incremental_reads_only_changed_files_with_state_on_a_filesystem_connection(project):
     incremental(project)
     settings = project / ".cartage/config.yaml"
-    settings.write_text(settings.read_text().replace("dev: {path: .cartage/state}",
-                                                     "dev: {connection: samples, prefix: state}"))
+    settings.write_text(settings.read_text().replace("state:\n",
+                                                     "state:\n  dev: {connection: samples, prefix: state}\n"))
     assert json.loads(run(project).stdout)["read"] == 20
     assert (project / "data/sample/state/materials/dev/state.json").is_file()
     assert json.loads(run(project).stdout)["read"] == 0

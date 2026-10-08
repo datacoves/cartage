@@ -57,7 +57,7 @@ def test_reset(tmp_path):
 def test_write_rejects(tmp_path):
     errors = [RecordError(stage="destination", message="bad type", source="m.csv:9", details=[{"TYPE": "E"}], record={"a": "1"})]
     path = write_rejects(tmp_path, "p", new_run_id(), errors)
-    assert path.parent == tmp_path / ".cartage" / "rejects" / "p"
+    assert path.parent == tmp_path / "rejects" / "p"
     [line] = path.read_text().splitlines()
     assert json.loads(line) == {"stage": "destination", "message": "bad type", "source": "m.csv:9",
                                 "details": [{"TYPE": "E"}], "record": {"a": "1"}}

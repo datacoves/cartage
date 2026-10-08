@@ -5,10 +5,11 @@ import copy
 import shutil
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from cartage import registry
-from cartage.config import DestinationSpec, Pipeline, Project, SourceSpec, StateConfig
+from cartage.config import DestinationSpec, Pipeline, Project, SourceSpec
 from cartage.core import CartageError, FatalRunError, RunResult, StateBackend
 from cartage.secrets import Secrets
 from cartage.state import DestinationState, LocalStateBackend, StateStore, new_run_id, write_rejects
@@ -34,9 +35,11 @@ class Prepared:
 
 
 def state_backend(project: Project, env: str, secrets: Secrets) -> StateBackend:
-    cfg = project.config.state.get(env) or StateConfig(path=".cartage/state")
+    cfg = project.config.state.get(env)
+    if cfg is None:
+        return LocalStateBackend(project.artifacts_dir / "state")
     if cfg.path is not None:
-        return LocalStateBackend(project.root / cfg.path)
+        return LocalStateBackend(project.root / Path(cfg.path).expanduser())
     ctype, conf, where = project.connection(cfg.connection, env)
     cls = registry.connection_class(ctype)
     if not hasattr(cls, "state_backend"):
@@ -128,7 +131,7 @@ def run_pipeline(prep: Prepared, *, advance_state: bool = False, full_refresh: b
             result = _run_engine(prep, state, on_progress or (lambda _: None))
         except FatalRunError as e:
             if e.result is not None and e.result.errors:  # keep the partial rejects; state is never saved
-                e.result.rejects_path = str(write_rejects(prep.project.root, prep.name, new_run_id(), e.result.errors))
+                e.result.rejects_path = str(write_rejects(prep.project.artifacts_dir, prep.name, new_run_id(), e.result.errors))
             raise
         except CartageError:
             raise
@@ -136,7 +139,7 @@ def run_pipeline(prep: Prepared, *, advance_state: bool = False, full_refresh: b
             raise FatalRunError(f"Run failed: {type(e).__name__}: {e}") from e
         run_id = new_run_id()
         if result.errors:
-            result.rejects_path = str(write_rejects(prep.project.root, prep.name, run_id, result.errors))
+            result.rejects_path = str(write_rejects(prep.project.artifacts_dir, prep.name, run_id, result.errors))
         # dlt destinations load state with the data, so it has advanced whatever the record errors
         if advance_state or not result.errors or isinstance(prep.store, DestinationState):
             state.data["last_run"] = {"run_id": run_id, "read": result.read, "ok": result.ok, "errors": len(result.errors)}
