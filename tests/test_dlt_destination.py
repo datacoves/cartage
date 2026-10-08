@@ -234,3 +234,20 @@ def test_invalid_options(tmp_path, options, message):
 def test_unknown_destination(tmp_path):
     with pytest.raises(CartageError, match="Unknown dlt destination 'nope'"):
         DltDestinationAdapter({"destination": "nope"}, {}, tmp_path)
+
+
+def test_full_refresh_drops_a_table_another_pipeline_created(project, tmp_path):
+    import duckdb
+    db = tmp_path / "w.duckdb"
+    with duckdb.connect(str(db)) as con:
+        con.execute("create schema raw; create table raw.materials (legacy text); insert into raw.materials values ('x')")
+    path = project / ".cartage/connections.yaml"
+    path.write_text(path.read_text() + f"\n  wh:\n    type: duckdb\n    envs:\n      dev: {{ credentials: {db} }}\n")
+    (project / "data" / "sample" / "materials.csv").write_text(MATERIALS)
+    pipeline(project, "to_wh", CSV_SOURCE + "destination:\n  connection: wh\n  dataset_name: raw\n  table_name: materials\n"
+                                            "  write_disposition: replace\n")
+    result = cli(project, "run", "to_wh", "--full-refresh")
+    assert result.exit_code == 0, result.output
+    with duckdb.connect(str(db)) as con:
+        columns = [c[0] for c in con.execute("describe raw.materials").fetchall()]
+        assert "legacy" not in columns and con.execute("select count(*) from raw.materials").fetchone()[0] == 2

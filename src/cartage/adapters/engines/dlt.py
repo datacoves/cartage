@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import dlt
-from dlt.common.destination.exceptions import DestinationTerminalException
+from dlt.common.destination.exceptions import DestinationTerminalException, SqlClientNotAvailable
 
 from cartage.core import CartageError, FatalRunError, PipelineState, RunResult, to_rows
 from cartage.transforms import Step, apply_steps
@@ -22,6 +22,20 @@ def native_pipeline(name: str, destination, dlt_dir: Path):
     with patch.dict(os.environ, destination.dlt_env):
         yield dlt.pipeline(pipeline_name=name, destination=destination.dlt_destination(),
                            dataset_name=destination.dataset_name or name, pipelines_dir=str(dlt_dir))
+
+
+def drop_tables(pipeline, tables: list[str]) -> None:
+    """--full-refresh: dlt's refresh drops only the tables in this pipeline's own schema, so a table another pipeline
+    or tool created would stay (with its rows and columns). Drop the resources' tables first on SQL destinations."""
+    if pipeline.destination.destination_type.endswith(".filesystem"):
+        return  # files, not tables: dlt's refresh is all there is
+    try:
+        client = pipeline.sql_client()
+    except SqlClientNotAvailable:
+        return
+    with client:
+        if client.has_dataset():
+            client.drop_tables(*tables)
 
 
 class DltEngine:
@@ -96,6 +110,8 @@ class DltEngine:
             schema = dlt.Schema(name)
             schema.remove_type_detection("iso_timestamp")  # keep ISO strings as strings, same as the python engine
             pipeline.abort_packages()  # a failed earlier run must not be replayed from the reused dlt_dir
+            if refresh:
+                drop_tables(pipeline, [r.table_name for r in piped if isinstance(r.table_name, str)])
             try:
                 pipeline.run(piped, schema=schema, loader_file_format=file_format, refresh=refresh)
             except Exception as e:
