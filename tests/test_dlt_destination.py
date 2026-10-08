@@ -251,3 +251,15 @@ def test_full_refresh_drops_a_table_another_pipeline_created(project, tmp_path):
     with duckdb.connect(str(db)) as con:
         columns = [c[0] for c in con.execute("describe raw.materials").fetchall()]
         assert "legacy" not in columns and con.execute("select count(*) from raw.materials").fetchone()[0] == 2
+
+
+def test_progress_reports_the_dlt_stage(project, tmp_path):
+    from cartage.config import load_project
+    from cartage.runner import prepare, run_pipeline
+    path = project / ".cartage/connections.yaml"
+    path.write_text(path.read_text() + f"\n  wh:\n    type: duckdb\n    envs:\n      dev: {{ credentials: {tmp_path / 'w.duckdb'} }}\n")
+    (project / "data" / "sample" / "materials.csv").write_text(MATERIALS)
+    pipeline(project, "to_wh", CSV_SOURCE + "destination:\n  connection: wh\n  table_name: materials\n")
+    stages = []
+    run_pipeline(prepare(load_project(project), "to_wh"), on_progress=lambda r: stages.append(r.stage))
+    assert [s for i, s in enumerate(stages) if s and s not in stages[:i]] == ["reading", "normalizing", "loading"]

@@ -60,6 +60,7 @@ class RunResult:
     errors: list[RecordError] = field(default_factory=list)
     state_advanced: bool = False
     rejects_path: str | None = None
+    stage: str = ""  # what the engine is doing now, for the progress line (e.g. "loading")
 
     def add_batch(self, batch: BatchResult) -> None:
         self.sent += batch.ok + len(batch.errors)
@@ -68,7 +69,7 @@ class RunResult:
         self.errors.extend(batch.errors)
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        return {k: v for k, v in asdict(self).items() if k != "stage"}
 
 
 @dataclass

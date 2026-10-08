@@ -128,12 +128,10 @@ class RunProgress:
         self.progress.stop()
 
     def update(self, r: RunResult) -> None:
-        self.progress.update(
-            self.task,
-            description=(
-                f"{self.label}  read {r.read} · sent {r.sent} · [green]ok {r.ok}[/] · [red]errors {len(r.errors)}[/]"
-            ),
-        )
+        parts = [self.label, f"[cyan]{r.stage}[/]" if r.stage else ""]
+        if r.read or r.sent:  # a native dlt run only has counts at the end
+            parts.append(f"read {r.read} · sent {r.sent} · [green]ok {r.ok}[/] · [red]errors {len(r.errors)}[/]")
+        self.progress.update(self.task, description="  ".join(p for p in parts if p))
 
 
 def _code(error: RecordError) -> str:

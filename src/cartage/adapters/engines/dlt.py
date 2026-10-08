@@ -11,17 +11,31 @@ from unittest.mock import patch
 
 import dlt
 from dlt.common.destination.exceptions import DestinationTerminalException, SqlClientNotAvailable
+from dlt.common.runtime.collector import NullCollector
 
 from cartage.core import CartageError, FatalRunError, PipelineState, RunResult, to_rows
 from cartage.transforms import Step, apply_steps
 
 
 @contextmanager
-def native_pipeline(name: str, destination, dlt_dir: Path):
+def native_pipeline(name: str, destination, dlt_dir: Path, progress=None):
     """The dlt pipeline for a dlt destination, with the destination's per-run settings applied while it is open."""
     with patch.dict(os.environ, destination.dlt_env):
         yield dlt.pipeline(pipeline_name=name, destination=destination.dlt_destination(),
-                           dataset_name=destination.dataset_name or name, pipelines_dir=str(dlt_dir))
+                           dataset_name=destination.dataset_name or name, pipelines_dir=str(dlt_dir), progress=progress)
+
+
+class StageCollector(NullCollector):
+    """Reports which dlt step is running (dlt calls _start with "Extract <source>", "Normalize ...", "Load ...")."""
+
+    STAGES = {"Extract": "reading", "Normalize": "normalizing", "Load": "loading"}
+
+    def __init__(self, result: RunResult, on_progress: Callable[[RunResult], None]):
+        self.result, self.on_progress = result, on_progress
+
+    def _start(self, step: str) -> None:
+        self.result.stage = self.STAGES.get(step.split(" ", 1)[0], "")
+        self.on_progress(self.result)
 
 
 def drop_tables(pipeline, tables: list[str]) -> None:
@@ -99,11 +113,13 @@ class DltEngine:
             return r
 
         piped = [pipe(r) for r in resources]
+        progress = StageCollector(result, on_progress)
         if native:  # dlt keeps the state in the destination and restores it from there
-            opened = native_pipeline(name, destination, state.dlt_dir)
+            opened = native_pipeline(name, destination, state.dlt_dir, progress)
             file_format, refresh = destination.loader_file_format, "drop_resources" if state.full_refresh else None
         else:  # a sink has nowhere to keep state: the runner archives dlt_dir
-            opened = nullcontext(dlt.pipeline(pipeline_name=name, destination=sink, pipelines_dir=str(state.dlt_dir)))
+            opened = nullcontext(dlt.pipeline(pipeline_name=name, destination=sink, pipelines_dir=str(state.dlt_dir),
+                                               progress=progress))
             file_format, refresh = None, None
 
         with opened as pipeline:
@@ -132,6 +148,9 @@ class DltEngine:
             on_progress(result)
             hooks = getattr(destination, "after_load", None)
             if hooks:
+                if getattr(destination, "after_load_hooks", None):
+                    result.stage = "running after_load hooks"
+                    on_progress(result)
                 try:
                     hooks(pipeline)
                 except FatalRunError as e:
