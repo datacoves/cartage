@@ -44,8 +44,10 @@ class DltDestinationAdapter:
             settings["bucket_url"] = bucket_url(settings, root)
         credentials = settings.get("credentials")
         if self.name == "duckdb" and isinstance(credentials, str) and credentials != ":memory:" \
-                and "://" not in credentials and not Path(credentials).is_absolute():
-            settings["credentials"] = str((Path(root) / credentials).resolve())  # project-relative, like bucket_url
+                and "://" not in credentials:
+            path = (Path(root) / Path(credentials).expanduser()).resolve()  # project-relative, like bucket_url
+            path.parent.mkdir(parents=True, exist_ok=True)  # duckdb creates the file, not its folder
+            settings["credentials"] = str(path)
         # Tuning: connection-level defaults, pipeline-level overrides.
         dataset = settings.pop("dataset_name", None)
         naming = options.get("naming") or settings.pop("naming", None)

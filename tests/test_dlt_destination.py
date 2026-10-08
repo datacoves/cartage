@@ -263,3 +263,9 @@ def test_progress_reports_the_dlt_stage(project, tmp_path):
     stages = []
     run_pipeline(prepare(load_project(project), "to_wh"), on_progress=lambda r: stages.append(r.stage))
     assert [s for i, s in enumerate(stages) if s and s not in stages[:i]] == ["reading", "normalizing", "loading"]
+
+
+def test_a_duckdb_file_under_home_gets_its_folder(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    DltDestinationAdapter({"destination": "duckdb", "credentials": "~/.cartage/p/w.duckdb"}, {}, tmp_path)
+    assert (tmp_path / "home" / ".cartage" / "p").is_dir()

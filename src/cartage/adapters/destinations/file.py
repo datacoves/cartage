@@ -41,7 +41,7 @@ class FileDestination:
     def __init__(self, config: dict, options: dict, root: Path):
         if not config.get("path"):
             raise CartageError("A file connection needs 'path'", hint="The output folder, e.g. path: ./output")
-        self.folder = (Path(root) / config["path"]).resolve()
+        self.folder = (Path(root) / Path(config["path"]).expanduser()).resolve()
         self.format = options.get("format", "jsonl")
         if self.format not in FORMATS:
             raise CartageError(f"Unsupported file format '{self.format}'", hint=f"Use one of: {', '.join(FORMATS)}")
