@@ -30,7 +30,6 @@ app = typer.Typer(
     name="cartage",
     help="Declarative data migrations: YAML pipelines, Python transforms, any engine, any orchestrator.",
     no_args_is_help=True,
-    add_completion=False,
     pretty_exceptions_enable=False,
 )
 
@@ -41,6 +40,25 @@ class Options:
 
 
 OPTS = Options()
+
+
+def _completion_project(ctx: typer.Context):
+    """The project for shell completion: -C if given, else the nearest one; None when there is no valid project."""
+    project_dir = ctx.find_root().params.get("project_dir")  # completion leaves it unconverted: a str
+    try:
+        return load_project(Path(project_dir) if project_dir else None)
+    except Exception:
+        return None
+
+
+def _complete_pipelines(ctx: typer.Context, incomplete: str) -> list[str]:
+    project = _completion_project(ctx)
+    return [p.stem for p in project.pipeline_files() if p.stem.startswith(incomplete)] if project else []
+
+
+def _complete_envs(ctx: typer.Context, incomplete: str) -> list[str]:
+    project = _completion_project(ctx)
+    return [e for e in project.config.environments if e.startswith(incomplete)] if project else []
 
 
 def _version(value: bool) -> None:
@@ -99,7 +117,7 @@ def init(
     ui.init_done(directory, created, placeholders(files), final.pipeline_name)
 
 
-EnvOption = typer.Option(None, "--env", "-e", help="Environment (default: default_env).")
+EnvOption = typer.Option(None, "--env", "-e", help="Environment (default: default_env).", autocompletion=_complete_envs)
 EngineOption = typer.Option(None, "--engine", help="Override the pipeline's engine.")
 JsonOption = typer.Option(False, "--json", help="Print machine-readable JSON.")
 NoDepsOption = typer.Option(False, "--no-deps", envvar="CARTAGE_NO_DEPS",
@@ -129,7 +147,7 @@ def _with_dependencies(project, refs: list[str], no_deps: bool) -> None:
 
 @app.command()
 def run(
-    pipeline: str = typer.Argument(..., help="Pipeline file or name."),
+    pipeline: str = typer.Argument(..., help="Pipeline file or name.", autocompletion=_complete_pipelines),
     env: str | None = EnvOption,
     engine: str | None = EngineOption,
     advance_state: bool = typer.Option(False, "--advance-state", help="Save state even if records failed."),
@@ -167,7 +185,7 @@ def run(
 
 @app.command()
 def validate(
-    pipelines: list[str] | None = typer.Argument(None, help="Pipelines to check (default: all)."),
+    pipelines: list[str] | None = typer.Argument(None, help="Pipelines to check (default: all).", autocompletion=_complete_pipelines),
     env: str | None = EnvOption,
     as_json: bool = JsonOption,
     no_deps: bool = NoDepsOption,
@@ -188,7 +206,7 @@ def validate(
 
 @app.command()
 def plan(
-    pipeline: str = typer.Argument(..., help="Pipeline file or name."),
+    pipeline: str = typer.Argument(..., help="Pipeline file or name.", autocompletion=_complete_pipelines),
     env: str | None = EnvOption,
     engine: str | None = EngineOption,
     n: int = typer.Option(3, "-n", help="Number of records to preview."),
@@ -261,7 +279,7 @@ def _stores(pipeline: str, env: str | None, no_deps: bool) -> tuple[dict, str, s
 
 
 @state_app.command("show")
-def state_show(pipeline: str = typer.Argument(..., help="Pipeline file or name."), env: str | None = EnvOption,
+def state_show(pipeline: str = typer.Argument(..., help="Pipeline file or name.", autocompletion=_complete_pipelines), env: str | None = EnvOption,
                no_deps: bool = NoDepsOption) -> None:
     """Show stored state (processed files, dlt archive, last run)."""
     with ui.handle_errors(OPTS.debug):
@@ -272,7 +290,7 @@ def state_show(pipeline: str = typer.Argument(..., help="Pipeline file or name."
 
 @state_app.command("reset")
 def state_reset(
-    pipeline: str = typer.Argument(..., help="Pipeline file or name."),
+    pipeline: str = typer.Argument(..., help="Pipeline file or name.", autocompletion=_complete_pipelines),
     env: str | None = EnvOption,
     yes: bool = typer.Option(False, "--yes", "-y", help="Do not ask for confirmation."),
     no_deps: bool = NoDepsOption,
@@ -305,7 +323,7 @@ def _check_remote_state(project, pipeline, env: str) -> None:
 
 @app.command()
 def generate(
-    pipelines: list[str] | None = typer.Argument(None, help="Pipelines (default: all with a schedule)."),
+    pipelines: list[str] | None = typer.Argument(None, help="Pipelines (default: all with a schedule).", autocompletion=_complete_pipelines),
     target: str = typer.Option("airflow", "--target", "-t", help="Orchestrator: airflow, dagster or prefect."),
     output: Path | None = typer.Option(None, "--output", "-o", help="Output folder (default: dags_dir setting)."),
     check: bool = typer.Option(False, "--check", help="Exit 1 if generated files are missing or out of date."),

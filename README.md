@@ -98,6 +98,10 @@ Cartage needs Python 3.11.4 or newer. dlt is included; extras add the rest.
 
 `cartage[dlt]` still works; since 0.6 it adds nothing, as dlt is a core dependency.
 
+Tab completion of commands, pipeline names and `--env` values: run `cartage --install-completion` once (bash, zsh,
+fish or PowerShell), then open a new shell. Completion runs the `cartage` command, so it needs a real install
+(`pip install cartage` or `uv tool install cartage`), not a shell alias such as `alias cartage='uvx ... cartage'`.
+
 Generating Airflow, Dagster or Prefect files needs nothing extra; the orchestrator itself runs them. A pipeline can
 also list the packages it needs, and `cartage run` adds them with uv: see
 [Dependencies](docs/configuration.md#dependencies).

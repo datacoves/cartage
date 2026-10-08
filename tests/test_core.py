@@ -78,3 +78,12 @@ def test_run_result_add_batch():
     )
     assert (r.sent, r.ok, r.warnings, len(r.errors)) == (3, 2, 1, 1)
     assert r.to_dict()["errors"][0]["message"] == "bad"
+
+
+def test_shell_completion_lists_pipelines_and_envs(project):
+    def complete(line):
+        env = {"_CARTAGE_COMPLETE": "complete_bash", "COMP_WORDS": line, "COMP_CWORD": str(len(line.split()) - 1)}
+        return runner.invoke(app, [], env=env, prog_name="cartage").output.split()
+
+    assert complete(f"cartage -C {project} run mat") == ["materials"]
+    assert complete(f"cartage -C {project} run materials --env d") == ["dev"]
