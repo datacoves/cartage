@@ -86,7 +86,7 @@ class FilesystemSource(DltSourceAdapter):
         self.batch_size = int(options.get("batch_size", 100))
         self.ref = f"{self.url}/{self.path}"  # for messages
         self.run_name = "files"  # the table name for dlt destinations; the runner sets the pipeline name
-        self.resources, self.incremental = [], None  # DltSourceAdapter's ref-source options: not used here
+        self.resources, self.incremental, self.tables = [], None, {}  # DltSourceAdapter's ref-source options: not used here
 
     def _resources(self, incremental: bool = False) -> list:
         import dlt.sources.filesystem as readers

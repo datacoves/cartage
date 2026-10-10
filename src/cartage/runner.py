@@ -83,9 +83,11 @@ def prepare(project: Project, pipeline_ref: str, env: str | None = None, engine:
     steps = load_steps(pipeline.transforms, project.root)
     for step in steps:
         step.kwargs = secrets.resolve(step.kwargs, label)
-    if source_type in registry.NOT_CONNECTION_TYPES and spec.connection:
-        raise CartageError(f"{label}: '{spec.connection}' is a {source_type} connection; use ref: instead")
     source = registry.get("sources", source_type)(source_conf, source_opts, project.root)
+    tables = getattr(source, "tables", {})
+    if not hasattr(dest_cls, "dlt_destination") and any(source.table_hints(t) for t in tables):
+        raise CartageError(f"{label}: 'tables' sets destination hints, which only dlt destinations take "
+                           f"('{dest_spec.connection}' is {dest_type})", hint="Keep only incremental in 'tables'")
     if hasattr(source, "run_name"):  # e.g. the filesystem source's table name
         source.run_name = pipeline.name
     destination = dest_cls(dest_conf, dest_opts, project.root)

@@ -269,3 +269,73 @@ def test_a_duckdb_file_under_home_gets_its_folder(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     DltDestinationAdapter({"destination": "duckdb", "credentials": "~/.cartage/p/w.duckdb"}, {}, tmp_path)
     assert (tmp_path / "home" / ".cartage" / "p").is_dir()
+
+
+TWO_TABLES = '''import dlt
+
+
+@dlt.source
+def db(label="with"):
+    @dlt.resource
+    def family():
+        yield [{"id": 1, "updated": 1, "label": label}, {"id": 2, "updated": 2, "label": label}]
+
+    @dlt.resource
+    def author():  # no cursor column
+        yield [{"id": 1, "label": label}]
+
+    return family, author
+'''
+
+
+def _two_tables(project, tmp_path, source: str, connection: str = "") -> Path:
+    (project / "sources").mkdir(exist_ok=True)
+    (project / "sources" / "two_tables.py").write_text(TWO_TABLES)
+    db = tmp_path / "w.duckdb"
+    path = project / ".cartage/connections.yaml"
+    path.write_text(path.read_text() + f"\n  wh:\n    type: duckdb\n    envs:\n      dev: {{ credentials: {db} }}\n"
+                    + connection)
+    pipeline(project, "db", f"engine: dlt\nsource:\n{source}"
+                            "destination:\n  connection: wh\n  dataset_name: raw\n  write_disposition: append\n")
+    return db
+
+
+def _counts(db, *tables):
+    import duckdb
+    with duckdb.connect(str(db)) as con:
+        return [con.execute(f"select count(*), min(label) from raw.{t}").fetchone() for t in tables]
+
+
+def test_tables_override_incremental_and_write_disposition_per_table(project, tmp_path):
+    source = ("  ref: sources.two_tables:db\n  incremental: {cursor: updated}\n"
+              "  tables:\n    author: {incremental: false, write_disposition: replace}\n")
+    db = _two_tables(project, tmp_path, source)
+    for _ in range(2):
+        result = cli(project, "run", "db")
+        assert result.exit_code == 0, result.output
+    # family: incremental + append, so the second run adds nothing; author: replaced on each run
+    assert _counts(db, "family", "author") == [(2, "with"), (1, "with")]
+
+
+def test_without_the_override_a_table_missing_the_cursor_fails(project, tmp_path):
+    _two_tables(project, tmp_path, "  ref: sources.two_tables:db\n  incremental: {cursor: updated}\n")
+    result = cli(project, "run", "db")
+    assert result.exit_code != 0 and "updated" in result.output
+
+
+def test_tables_must_name_resources_and_known_settings(project, tmp_path):
+    _two_tables(project, tmp_path, "  ref: sources.two_tables:db\n  tables:\n    authors: {write_disposition: replace}\n")
+    assert "names no resource of 'sources.two_tables:db': authors" in cli(project, "run", "db").output
+    pipeline(project, "db", "engine: dlt\nsource:\n  ref: sources.two_tables:db\n  resources: [family]\n"
+                            "  tables:\n    family: {cursor: updated}\ndestination:\n  connection: wh\n")
+    assert "Unknown setting(s) for table 'family': cursor" in cli(project, "validate", "db").output
+
+
+def test_a_dlt_connection_holds_the_factory_settings(project, tmp_path):
+    connection = ("\n  db_conn:\n    type: dlt\n    envs:\n"
+                  "      dev: { ref: sources.two_tables:db, label: from_connection }\n")
+    db = _two_tables(project, tmp_path, "  connection: db_conn\n  resources: [author]\n", connection)
+    result = cli(project, "run", "db")
+    assert result.exit_code == 0, result.output
+    assert _counts(db, "author") == [(1, "from_connection")]
+    assert "settings for the dlt source sources.two_tables:db" in cli(project, "connections", "test", "db_conn").output

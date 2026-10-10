@@ -102,8 +102,8 @@ engine (the default).
 
 ## dlt sources (`ref:`)
 
-A source written in Python, or one of dlt's built-in sources, has no connection: set `ref:` instead of `connection:`.
-Everything goes in the pipeline; credentials go in `with:` as references.
+A source written in Python, or one of dlt's built-in sources, is set with `ref:`. Its keyword arguments go in `with:`,
+credentials as references.
 
 | Pipeline option (source) | Default      | Meaning                                                                       |
 | ------------------------ | ------------ | ----------------------------------------------------------------------------- |
@@ -111,7 +111,60 @@ Everything goes in the pipeline; credentials go in `with:` as references.
 | `with`                   | `{}`         | keyword arguments for that function                                           |
 | `resources`              | all selected | the resources to read from a dlt source                                       |
 | `incremental`            | none         | `{ cursor: updated_at, initial: "2024-01-01" }`, plus any `dlt.sources.incremental` option: `lag`, `end_value`, `primary_key`, `row_order`, `last_value_func`, `on_cursor_value_missing`, `range_start`, `range_end` (dlt engine) |
+| `tables`                 | none         | per-resource overrides: `incremental` (`false`, or its own mapping) and the destination hints `write_disposition`, `primary_key`, `merge_key`, `columns` |
 | `batch_size`             | `100`        | records per batch (python engine and record destinations)                     |
+
+### Different tables, different loads
+
+One pipeline can read tables that load differently: `incremental` and the destination options are the defaults, and
+`tables:` overrides them per resource (the table name, for `sql_database`). This also covers cursor columns with
+different names.
+
+```yaml
+source:
+  ref: dlt.sources.sql_database:sql_database
+  with:
+    credentials: { ... }
+    table_names: [family, clan, clan_membership, author]
+  incremental: { cursor: updated }                 # every table, unless tables: says otherwise
+  tables:
+    clan_membership: { incremental: false, write_disposition: replace }
+    author:          { incremental: false, write_disposition: replace }
+    clan:            { incremental: { cursor: modified_at } }
+destination: { connection: warehouse, dataset_name: rfam, write_disposition: merge, primary_key: id }
+```
+
+A `tables:` entry's settings win over the destination's. `cartage validate` checks the names against `resources:` or
+`with.table_names` when the pipeline lists them; otherwise `cartage run` checks them before reading anything. The
+destination hints need a dlt destination; with several destinations they apply to each.
+
+### A database used by several pipelines
+
+When pipelines share a database (different schedules or destinations), put its settings in a `type: dlt` connection.
+Each environment's settings are passed to the function like `with:` (the pipeline's `with:` wins), and can include the
+`ref`, so each value can be its own secret:
+
+```yaml
+# .cartage/connections.yaml
+connections:
+  rfam_db:
+    type: dlt
+    envs:
+      dev:
+        ref: dlt.sources.sql_database:sql_database
+        credentials:
+          drivername: mysql+pymysql
+          host: mysql-rfam-public.ebi.ac.uk
+          port: 4497
+          database: Rfam
+          username: "${secret:rfam.{env}.username}"
+          password: "${secret:rfam.{env}.password}"
+```
+
+```yaml
+# pipelines/rfam_families.yaml
+source: { connection: rfam_db, with: { table_names: [family, clan] } }
+```
 
 See [Generic sources](configuration.md#generic-sources-no-python) for REST APIs without Python.
 

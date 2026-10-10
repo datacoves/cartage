@@ -13,7 +13,6 @@ KINDS = ("sources", "destinations", "engines", "orchestrators")
 EXTRAS: dict[tuple[str, str], str] = {
     ("orchestrators", "airflow"): "airflow",
 }
-NOT_CONNECTION_TYPES = {"dlt"}  # the dlt source is a `ref:` written in Python, not a system to connect to
 
 
 def available(kind: str) -> dict[str, EntryPoint]:
@@ -71,13 +70,13 @@ def destination_config(type_name: str, config: dict[str, Any]) -> dict[str, Any]
 
 def connection_class(type_name: str) -> type:
     """The class that tests a connection or stores state: its source adapter, else its destination adapter."""
-    if type_name in available("sources") and type_name not in NOT_CONNECTION_TYPES:
+    if type_name in available("sources"):
         return get("sources", type_name)
     return destination_class(type_name)
 
 
 def connection_types() -> list[str]:
-    own = {*available("sources"), *available("destinations")} - NOT_CONNECTION_TYPES
+    own = {*available("sources"), *available("destinations")}
     return sorted(own | dlt_destinations())
 
 

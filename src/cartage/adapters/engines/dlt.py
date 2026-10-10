@@ -105,12 +105,14 @@ class DltEngine:
         else:
             resources = [dlt.resource(guarded(source.read(state.data)), name=name, max_table_nesting=0)]
 
+        table_hints = getattr(source, "table_hints", lambda _: {})
+
         def pipe(r):
-            table = r.table_name  # the transformer must not rename the destination table
+            table, own = r.table_name, table_hints(r.name)  # the transformer must not rename the destination table
             if steps or not native:  # without steps, dlt destinations get the source's batches untouched (Arrow)
                 r = r | dlt.transformer(page, name=f"{r.name}__cartage", max_table_nesting=0)
-            if native:
-                r.apply_hints(**{"table_name": table, **destination.hints})
+            if native:  # a `tables:` entry wins over the destination's defaults
+                r.apply_hints(**{"table_name": table, **destination.hints, **own})
             return r
 
         piped = [pipe(r) for r in resources]

@@ -137,7 +137,7 @@ Full reference for every type: [docs/connections.md](connections.md).
 | Source                         | Connection settings                         | Pipeline options                                              |
 | ------------------------------ | ------------------------------------------- | ------------------------------------------------------------- |
 | `filesystem` connection        | `bucket_url`, `credentials`                 | `path` (glob), `format` (`csv`, `jsonl`, `parquet`), `reader_options`, `incremental`, `batch_size` |
-| `ref:` (a dlt source, no connection) | —                                     | `ref` (`module:function`), `with`, `resources`, `incremental`, `batch_size` |
+| `ref:` (a dlt source)          | optional `type: dlt` connection: the function's keyword arguments (and `ref`) | `ref` (`module:function`), `with`, `resources`, `incremental`, `tables`, `batch_size` |
 
 A `filesystem` source reads every file matching `path` with dlt's typed readers (pandas for CSV), so numbers arrive as
 numbers. `reader_options` go to the reader, e.g. `{ dtype: str, keep_default_na: false }` to keep codes such as
@@ -150,7 +150,8 @@ adds a dlt cursor. Incremental sources need the dlt engine (the default).
 Other keys go to `dlt.sources.incremental`: `lag` (re-read a window before the last value, e.g. for late updates),
 `end_value`, `primary_key`, `row_order`, `last_value_func`, `on_cursor_value_missing`, `range_start`, `range_end`.
 When `ref` returns a dlt source with several resources, `resources: [name, ...]` picks the ones to read (default: the
-source's selected resources).
+source's selected resources), and `tables:` sets `incremental` and destination hints per resource; see
+[dlt sources](connections.md#different-tables-different-loads).
 
 #### Generic sources (no Python)
 

@@ -43,12 +43,18 @@ def test_a_plugin_named_like_a_dlt_destination_is_an_error(monkeypatch):
         registry.destination_class("snowflake")
 
 
-@pytest.mark.parametrize("old, hint", [("dlt", "type: snowflake"), ("sap", "sap_bapi"), ("file", "file_export"),
-                                       ("s3", "bucket_url: s3://")])
+@pytest.mark.parametrize("old, hint", [("sap", "sap_bapi"), ("file", "file_export"), ("s3", "bucket_url: s3://")])
 def test_old_type_names_point_to_the_new_ones(old, hint):
     with pytest.raises(CartageError, match=f"Unknown connection type '{old}'") as info:
         registry.connection_class(old)
     assert hint in info.value.hint
+
+
+def test_dlt_is_a_source_connection_not_a_destination():
+    assert registry.connection_class("dlt").__name__ == "DltSourceAdapter"
+    with pytest.raises(CartageError, match="Unknown connection type 'dlt'") as info:
+        registry.destination_class("dlt")
+    assert "type: snowflake" in info.value.hint
 
 
 def test_unknown_connection_type_lists_types():
