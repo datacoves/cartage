@@ -91,6 +91,8 @@ def prepare(project: Project, pipeline_ref: str, env: str | None = None, engine:
     if hasattr(source, "run_name"):  # e.g. the filesystem source's table name
         source.run_name = pipeline.name
     destination = dest_cls(dest_conf, dest_opts, project.root)
+    if hasattr(source, "check_loads"):
+        source.check_loads(getattr(destination, "hints", {}))
     if getattr(destination, "dataset_name", "") is None:  # dlt destinations default to the pipeline, not the run name
         destination.dataset_name = pipeline.name
     if hasattr(destination, "run_name"):  # e.g. the file destination's default file name

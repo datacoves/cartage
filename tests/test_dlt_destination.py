@@ -308,7 +308,7 @@ def _counts(db, *tables):
 
 def test_tables_override_incremental_and_write_disposition_per_table(project, tmp_path):
     source = ("  ref: sources.two_tables:db\n  incremental: {cursor: updated}\n"
-              "  tables:\n    author: {incremental: false, write_disposition: replace}\n")
+              "  tables:\n    - family\n    - author: {incremental: false, write_disposition: replace}\n")
     db = _two_tables(project, tmp_path, source)
     for _ in range(2):
         result = cli(project, "run", "db")
@@ -319,7 +319,7 @@ def test_tables_override_incremental_and_write_disposition_per_table(project, tm
 
 def test_the_summary_shows_rows_per_table(project, tmp_path):
     source = ("  ref: sources.two_tables:db\n  incremental: {cursor: updated}\n"
-              "  tables:\n    author: {incremental: false, write_disposition: replace}\n")
+              "  tables:\n    - family\n    - author: {incremental: false, write_disposition: replace}\n")
     _two_tables(project, tmp_path, source)
     assert "family" in cli(project, "run", "db").output  # the box lists the tables
     out = cli(project, "run", "db", "--json")
@@ -338,11 +338,64 @@ def test_without_the_override_a_table_missing_the_cursor_fails(project, tmp_path
 
 
 def test_tables_must_name_resources_and_known_settings(project, tmp_path):
-    _two_tables(project, tmp_path, "  ref: sources.two_tables:db\n  tables:\n    authors: {write_disposition: replace}\n")
+    _two_tables(project, tmp_path, "  ref: sources.two_tables:db\n  resources: [family, author]\n"
+                                   "  tables:\n    - authors: {write_disposition: replace}\n")
     assert "names no resource of 'sources.two_tables:db': authors" in cli(project, "run", "db").output
     pipeline(project, "db", "engine: dlt\nsource:\n  ref: sources.two_tables:db\n  resources: [family]\n"
-                            "  tables:\n    family: {cursor: updated}\ndestination:\n  connection: wh\n")
+                            "  tables:\n    - family: {cursor: updated}\ndestination:\n  connection: wh\n")
     assert "Unknown setting(s) for table 'family': cursor" in cli(project, "validate", "db").output
+
+
+def test_tables_is_the_selection(project, tmp_path):
+    db = _two_tables(project, tmp_path, "  ref: sources.two_tables:db\n  tables:\n    - author\n")
+    result = cli(project, "run", "db")
+    assert result.exit_code == 0, result.output
+    assert _counts(db, "author") == [(1, "with")]
+    import duckdb
+    with duckdb.connect(str(db)) as con:
+        assert not con.execute("select * from information_schema.tables where table_name = 'family'").fetchall()
+
+
+def test_tables_passes_table_names_to_a_factory_that_takes_them(project, tmp_path):
+    from cartage.adapters.sources.dlt import DltSourceAdapter
+    (project / "sources").mkdir(exist_ok=True)
+    (project / "sources" / "named.py").write_text(
+        "import dlt\n\n\n@dlt.source\ndef db(table_names=None):\n"
+        "    return [dlt.resource([{'id': 1}], name=n) for n in table_names or ['a', 'b', 'c']]\n")
+    source = DltSourceAdapter({}, {"ref": "sources.named:db", "tables": ["b", {"c": None}]}, project)
+    assert [r.name for r in source.dlt_resources()] == ["b", "c"]
+
+
+@pytest.mark.parametrize(("tables", "error"), [
+    ({"family": {}}, "must be a list of table names"),
+    (["family", "family"], "lists 'family' twice"),
+    ([{"family": None, "incremental": False}], "must be a table name or one name with settings"),
+])
+def test_tables_list_form_is_checked(project, tables, error):
+    from cartage.adapters.sources.dlt import DltSourceAdapter
+    with pytest.raises(CartageError, match=error):
+        DltSourceAdapter({}, {"ref": "sources.two_tables:db", "tables": tables}, project)
+
+
+@pytest.mark.parametrize(("source", "error"), [
+    ("  incremental: true\n  tables:\n    - family: {incremental: {cursor: updated}}\n    - author\n",
+     "Table 'author' has no incremental cursor"),
+    ("  incremental: {}\n  tables:\n    - author\n", "must be a mapping with 'cursor'"),
+    ("  incremental: {cursor: updated}\n  tables:\n    - family: {write_disposition: replace}\n",
+     "tables.family: incremental (from source.incremental) has no effect with write_disposition: replace (from tables)"),
+])
+def test_incremental_settings_are_checked(project, tmp_path, source, error):
+    _two_tables(project, tmp_path, "  ref: sources.two_tables:db\n" + source)
+    assert error in " ".join(cli(project, "validate", "db").output.split())
+
+
+def test_incremental_true_with_a_cursor_per_table(project, tmp_path):
+    source = ("  ref: sources.two_tables:db\n  incremental: true\n  tables:\n"
+              "    - family: {incremental: {cursor: updated}}\n    - author: {incremental: false}\n")
+    db = _two_tables(project, tmp_path, source)
+    for _ in range(2):
+        assert cli(project, "run", "db").exit_code == 0
+    assert _counts(db, "family", "author") == [(2, "with"), (2, "with")]  # family incremental; author appends
 
 
 def test_a_dlt_connection_holds_the_factory_settings(project, tmp_path):

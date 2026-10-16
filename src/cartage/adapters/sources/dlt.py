@@ -2,6 +2,7 @@
 """Any dlt source or resource, referenced as module:function."""
 from __future__ import annotations
 
+import inspect
 from collections.abc import Iterator, Mapping
 from pathlib import Path
 
@@ -18,9 +19,12 @@ INCREMENTAL_OPTIONS = ("lag", "end_value", "primary_key", "row_order", "last_val
 TABLE_HINTS = ("write_disposition", "primary_key", "merge_key", "columns")
 
 
-def _incremental(value, where: str) -> dict | None:
-    if not value:
+def _incremental(value, where: str, per_table: bool = False) -> dict | bool | None:
+    """None or false: read everything. A source-level `true`: incremental, each table sets its own cursor."""
+    if value is None or value is False:
         return None
+    if value is True and per_table:
+        return True
     if not (isinstance(value, dict) and "cursor" in value):
         raise CartageError(f"{where} must be a mapping with 'cursor'",
                            hint='incremental: { cursor: updated_at, initial: "2024-01-01" }')
@@ -47,11 +51,13 @@ class DltSourceAdapter:
         self.resources = options.get("resources") or []
         if not isinstance(self.resources, list) or not all(isinstance(r, str) for r in self.resources):
             raise CartageError("dlt source 'resources' must be a list of resource names", hint="e.g. resources: [read_csv]")
-        self.incremental = _incremental(options.get("incremental"), "dlt source incremental")
-        self.tables = self._tables(options.get("tables") or {})
-        known = self.resources or self.kwargs.get("table_names")  # checked here without calling the factory
+        self.incremental = _incremental(options.get("incremental"), "dlt source incremental", per_table=True)
+        self.tables = self._tables(options.get("tables") or [])
+        known = self._names()  # checked here without calling the factory
         if isinstance(known, list):
             self._check_tables(known)
+            for name in known:
+                self._incremental_for(name)
         try:
             self.batch_size = int(options.get("batch_size", 100))
         except (TypeError, ValueError) as error:
@@ -66,18 +72,63 @@ class DltSourceAdapter:
         return (f"settings for the dlt source {ref}" if ref else "settings for a dlt source (the pipeline gives ref:)") + \
             "; connectivity is checked on first read"
 
-    def _tables(self, tables) -> dict[str, dict]:
-        """Per-resource overrides: `tables: {clan_membership: {incremental: false, write_disposition: replace}}`."""
-        if not isinstance(tables, Mapping) or not all(isinstance(v, Mapping) for v in tables.values()):
-            raise CartageError("dlt source 'tables' must map resource names to settings",
-                               hint="tables: { author: { incremental: false, write_disposition: replace } }")
+    def _tables(self, items) -> dict[str, dict]:
+        """The tables to read, in order, each with its overrides: `tables: [family, {author: {incremental: false}}]`."""
+        hint = "tables:\n  - family\n  - author:\n      incremental: false\n      write_disposition: replace"
+        if not isinstance(items, list):
+            raise CartageError("dlt source 'tables' must be a list of table names, each optionally with settings",
+                               hint=hint)
+        tables: dict[str, dict] = {}
+        for item in items:
+            if isinstance(item, Mapping) and len(item) == 1:
+                (name, entry), = item.items()
+                entry = {} if entry is None else entry
+            else:
+                name, entry = item, {}
+            if not isinstance(name, str) or not isinstance(entry, Mapping):
+                raise CartageError(f"dlt source 'tables' item {item!r} must be a table name or one name with settings "
+                                   "(a mapping with several keys usually means the settings are not indented)",
+                                   hint=hint)
+            if name in tables:
+                raise CartageError(f"dlt source 'tables' lists '{name}' twice")
+            tables[name] = dict(entry)
         for name, entry in tables.items():
             unknown = sorted(set(entry) - {"incremental", *TABLE_HINTS})
             if unknown:
                 raise CartageError(f"Unknown setting(s) for table '{name}': {', '.join(unknown)}",
                                    hint=f"Supported: incremental, {', '.join(TABLE_HINTS)}")
             _incremental(entry.get("incremental"), f"table '{name}' incremental")
-        return dict(tables)
+        return tables
+
+    def _names(self) -> list[str] | None:
+        """The resources this pipeline reads, when known without calling the factory."""
+        return self.resources or self.kwargs.get("table_names") or list(self.tables) or None
+
+    def _incremental_for(self, name: str) -> tuple[dict | None, str]:
+        """A table's incremental settings and where they come from."""
+        entry = self.tables.get(name, {})
+        if "incremental" in entry:
+            return _incremental(entry["incremental"], ""), "tables"
+        if self.incremental is True:
+            raise CartageError(f"Table '{name}' has no incremental cursor: the source's 'incremental: true' means "
+                               "each table sets its own",
+                               hint=f"tables:\n  - {name}:\n      incremental: {{ cursor: updated_at }}   # or false")
+        return self.incremental, "source.incremental"
+
+    def check_loads(self, defaults: dict) -> None:
+        """Reject incremental with write_disposition: replace (from a table or the destination): replace reloads the
+        whole table, so the cursor does nothing. defaults: the destination's hints."""
+        for name in self._names() or [None]:
+            inc, inc_from = self._incremental_for(name) if name else (self.incremental, "source.incremental")
+            entry = self.tables.get(name, {})
+            disposition, wd_from = ((entry["write_disposition"], "tables") if "write_disposition" in entry
+                                    else (defaults.get("write_disposition"), "destination"))
+            if isinstance(disposition, Mapping):
+                disposition = disposition.get("disposition")
+            if inc and disposition == "replace":
+                where = f"tables.{name}" if name else "source"
+                raise CartageError(f"{where}: incremental (from {inc_from}) has no effect with write_disposition: "
+                                   f"replace (from {wd_from})", hint="Set incremental: false, or use merge or append")
 
     def _check_tables(self, names) -> None:
         missing = sorted(set(self.tables) - set(names))
@@ -91,20 +142,30 @@ class DltSourceAdapter:
 
     def _resources(self) -> list[DltResource]:
         func = import_ref(self.ref, self.root)
+        kwargs, resources = self.kwargs, self.resources
+        if self.tables and not resources and "table_names" not in kwargs:  # tables: is the selection
+            try:
+                takes_names = "table_names" in inspect.signature(func).parameters
+            except (TypeError, ValueError):
+                takes_names = False
+            if takes_names:  # e.g. sql_database: reflect only these tables
+                kwargs = {**kwargs, "table_names": list(self.tables)}
+            else:
+                resources = list(self.tables)
         try:
-            obj = func(**self.kwargs)
+            obj = func(**kwargs)
         except Exception as e:
             raise CartageError(f"Calling '{self.ref}' failed: {type(e).__name__}: {e}") from e
         if isinstance(obj, DltSource):
-            if not self.resources:
+            if not resources:
                 return list(obj.selected_resources.values())
-            missing = [r for r in self.resources if r not in obj.resources]
+            missing = [r for r in resources if r not in obj.resources]
             if missing:
                 raise CartageError(f"'{self.ref}' has no resource(s): {', '.join(missing)}",
                                    hint=f"Resources: {', '.join(obj.resources)}")
-            return [obj.resources[r] for r in self.resources]
+            return [obj.resources[r] for r in resources]
         if isinstance(obj, DltResource):
-            if self.resources and self.resources != [obj.name]:
+            if resources and resources != [obj.name]:
                 raise CartageError(f"'{self.ref}' returns the single resource '{obj.name}'; drop 'resources'")
             return [obj]
         raise CartageError(f"'{self.ref}' returned {type(obj).__name__}, expected a dlt source or resource")
@@ -113,8 +174,7 @@ class DltSourceAdapter:
         resources = self._resources()
         self._check_tables([r.name for r in resources])
         for r in resources:
-            entry = self.tables.get(r.name, {})
-            inc = _incremental(entry["incremental"], "") if "incremental" in entry else self.incremental
+            inc, _ = self._incremental_for(r.name)
             if inc:
                 options = {k: v for k, v in inc.items() if k in INCREMENTAL_OPTIONS}
                 r.apply_hints(incremental=dlt.sources.incremental(inc["cursor"], initial_value=inc.get("initial"),

@@ -150,7 +150,8 @@ adds a dlt cursor. Incremental sources need the dlt engine (the default).
 Other keys go to `dlt.sources.incremental`: `lag` (re-read a window before the last value, e.g. for late updates),
 `end_value`, `primary_key`, `row_order`, `last_value_func`, `on_cursor_value_missing`, `range_start`, `range_end`.
 When `ref` returns a dlt source with several resources, `resources: [name, ...]` picks the ones to read (default: the
-source's selected resources), and `tables:` sets `incremental` and destination hints per resource; see
+source's selected resources), and `tables:` lists the tables to read with `incremental` and destination hints per
+table; see
 [dlt sources](connections.md#different-tables-different-loads).
 
 #### Generic sources (no Python)

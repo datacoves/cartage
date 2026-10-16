@@ -110,32 +110,43 @@ credentials as references.
 | `ref`                    | —            | required: `module:function` returning a dlt source or resource; your project's (`sources.erp:materials`) or an installed package's (`dlt.sources.rest_api:rest_api_source`, `dlt.sources.sql_database:sql_table`) |
 | `with`                   | `{}`         | keyword arguments for that function                                           |
 | `resources`              | all selected | the resources to read from a dlt source                                       |
-| `incremental`            | none         | `{ cursor: updated_at, initial: "2024-01-01" }`, plus any `dlt.sources.incremental` option: `lag`, `end_value`, `primary_key`, `row_order`, `last_value_func`, `on_cursor_value_missing`, `range_start`, `range_end` (dlt engine) |
-| `tables`                 | none         | per-resource overrides: `incremental` (`false`, or its own mapping) and the destination hints `write_disposition`, `primary_key`, `merge_key`, `columns` |
+| `incremental`            | none         | `true` (each table sets its cursor in `tables`), or `{ cursor: updated_at, initial: "2024-01-01" }`, plus any `dlt.sources.incremental` option: `lag`, `end_value`, `primary_key`, `row_order`, `last_value_func`, `on_cursor_value_missing`, `range_start`, `range_end` (dlt engine) |
+| `tables`                 | none         | the tables (resources) to read, each optionally with overrides: `incremental` (`false`, or its own mapping) and the destination hints `write_disposition`, `primary_key`, `merge_key`, `columns` |
 | `batch_size`             | `100`        | records per batch (python engine and record destinations)                     |
 
 ### Different tables, different loads
 
-One pipeline can read tables that load differently: `incremental` and the destination options are the defaults, and
-`tables:` overrides them per resource (the table name, for `sql_database`). This also covers cursor columns with
-different names.
+`tables:` lists the tables to read (the resources; for `sql_database`, the database tables). A plain name loads with
+the defaults, `source.incremental` and the destination's options; a name with settings overrides them for that table.
 
 ```yaml
 source:
   ref: dlt.sources.sql_database:sql_database
   with:
     credentials: { ... }
-    table_names: [family, clan, clan_membership, author]
   incremental: { cursor: updated }                 # every table, unless tables: says otherwise
   tables:
-    clan_membership: { incremental: false, write_disposition: replace }
-    author:          { incremental: false, write_disposition: replace }
-    clan:            { incremental: { cursor: modified_at } }
+    - family
+    - clan:
+        incremental: { cursor: modified_at }
+    - clan_membership:
+        incremental: false
+        write_disposition: replace
 destination: { connection: warehouse, dataset_name: rfam, write_disposition: merge, primary_key: id }
 ```
 
-A `tables:` entry's settings win over the destination's. `cartage validate` checks the names against `resources:` or
-`with.table_names` when the pipeline lists them; otherwise `cartage run` checks them before reading anything. The
+The list is the selection: Cartage passes it as `table_names` when the function takes that argument (so
+`sql_database` reflects only these tables), and selects those resources otherwise. Without `tables:`, a source reads
+`with.table_names`, `resources:`, or everything it selects by default. With `resources:` or `with.table_names` as well,
+`tables:` may only name tables from them.
+
+Each setting is taken from the table's entry when it has one, otherwise from the default; a table that overrides only
+`write_disposition` keeps the default `incremental`. When cursors differ by table, `incremental: true` makes every table
+incremental and requires each one to set its cursor (or `incremental: false`). `cartage validate` rejects a table that
+ends up incremental with `write_disposition: replace`, since replace reloads the whole table and the cursor would do
+nothing; the error says where each setting came from.
+
+`cartage validate` checks the names against `resources:` or `with.table_names` when the pipeline lists them. The
 destination hints need a dlt destination; with several destinations they apply to each.
 
 When a run loads more than one table, its summary lists the rows each table got and how it loads (`incremental` with
