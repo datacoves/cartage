@@ -13,8 +13,9 @@ from unittest.mock import patch
 import dlt
 from dlt.common.destination.exceptions import DestinationTerminalException, SqlClientNotAvailable
 from dlt.common.runtime.collector import NullCollector
+from dlt.common.schema.utils import get_write_disposition
 
-from cartage.core import CartageError, FatalRunError, PipelineState, RunResult, to_rows
+from cartage.core import CartageError, FatalRunError, PipelineState, RunResult, TableResult, to_rows
 from cartage.transforms import Step, apply_steps
 
 
@@ -51,6 +52,26 @@ def drop_tables(pipeline, tables: list[str]) -> None:
     with client:
         if client.has_dataset():
             client.drop_tables(*tables)
+
+
+def table_results(pipeline, by_table: dict, counts: dict[str, int]) -> dict[str, TableResult]:
+    """Rows per top-level table (also those that got none), with how each loads and where its cursor stands."""
+    tables = pipeline.default_schema.tables
+    names = list(by_table) + [t for t in counts if t not in by_table and not t.startswith("_dlt")
+                              and not tables.get(t, {}).get("parent")]
+    resources = {name: r for source in pipeline.state.get("sources", {}).values()
+                 for name, r in source.get("resources", {}).items()}
+    out = {}
+    for t in names:
+        r = by_table.get(t)
+        inc = getattr(r, "incremental", None)
+        inc = getattr(inc, "incremental", inc)  # a wrapper (incremental argument) or the Incremental (apply_hints)
+        cursor = inc.cursor_path if inc else None
+        last = resources.get(r.name, {}).get("incremental", {}).get(cursor, {}) if cursor else {}
+        out[t] = TableResult(rows=counts.get(t, 0),
+                             write_disposition=get_write_disposition(tables, t) if t in tables else "",
+                             cursor=cursor, last_value=last.get("last_value"))
+    return out
 
 
 class DltEngine:
@@ -106,9 +127,12 @@ class DltEngine:
             resources = [dlt.resource(guarded(source.read(state.data)), name=name, max_table_nesting=0)]
 
         table_hints = getattr(source, "table_hints", lambda _: {})
+        by_table = {}  # destination table -> source resource, for the per-table summary
 
         def pipe(r):
-            table, own = r.table_name, table_hints(r.name)  # the transformer must not rename the destination table
+            table, own = r.table_name, table_hints(r.name)
+            if isinstance(table, str):
+                by_table[table] = r  # the transformer must not rename the destination table
             if steps or not native:  # without steps, dlt destinations get the source's batches untouched (Arrow)
                 r = r | dlt.transformer(page, name=f"{r.name}__cartage", max_table_nesting=0)
             if native:  # a `tables:` entry wins over the destination's defaults
@@ -143,10 +167,9 @@ class DltEngine:
                     error.result = result
                 raise error from e
         if native:  # dlt loads whole jobs: everything normalized into top-level tables was loaded
-            tables = pipeline.default_schema.tables
             counts = pipeline.last_trace.last_normalize_info.row_counts
-            result.ok = result.sent = sum(n for t, n in counts.items()
-                                          if not t.startswith("_dlt") and not tables.get(t, {}).get("parent"))
+            result.tables = table_results(pipeline, by_table, counts)
+            result.ok = result.sent = sum(t.rows for t in result.tables.values())
             result.read = result.read or result.ok
             on_progress(result)
             hooks = getattr(destination, "after_load", None)

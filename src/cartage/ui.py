@@ -177,9 +177,21 @@ def run_summary(
             else "state not advanced: fix the rejects and rerun, or pass --advance-state"
         )
     )
+    parts = [status, counts]
+    if len(result.tables) > 1:  # which tables got the rows, and how each loads
+        tables = Table(box=box.SIMPLE_HEAD)
+        tables.add_column("table", no_wrap=True)
+        tables.add_column("rows", justify="right")
+        tables.add_column("loads")
+        for name, t in result.tables.items():
+            loads = " · ".join(p for p in ("incremental" if t.cursor else "full", t.write_disposition) if p)
+            if t.cursor and t.last_value is not None:
+                loads += f"  ({t.cursor} ≥ {t.last_value})"
+            tables.add_row(Text(name), str(t.rows), Text(loads, style="dim"))
+        parts.append(tables)
     console.print(
         Panel(
-            Group(status, counts, Text(state, style="dim")),
+            Group(*parts, Text(state, style="dim")),
             title=f"{pipeline} · {env}",
             title_align="left",
             border_style="red" if fatal else "yellow" if result.errors else "green",

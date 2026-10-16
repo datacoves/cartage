@@ -51,6 +51,15 @@ class BatchResult:
 
 
 @dataclass
+class TableResult:
+    """One destination table of a run: rows loaded (child tables are not counted, as in the totals)."""
+    rows: int = 0
+    write_disposition: str = ""
+    cursor: str | None = None  # the incremental cursor; None loads the whole table each run
+    last_value: Any = None  # the cursor's value after this run
+
+
+@dataclass
 class RunResult:
     read: int = 0
     filtered: int = 0
@@ -61,6 +70,7 @@ class RunResult:
     state_advanced: bool = False
     rejects_path: str | None = None
     stage: str = ""  # what the engine is doing now, for the progress line (e.g. "loading")
+    tables: dict[str, TableResult] = field(default_factory=dict)  # dlt destinations: per table
 
     def add_batch(self, batch: BatchResult) -> None:
         self.sent += batch.ok + len(batch.errors)

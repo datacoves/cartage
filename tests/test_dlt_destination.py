@@ -317,6 +317,20 @@ def test_tables_override_incremental_and_write_disposition_per_table(project, tm
     assert _counts(db, "family", "author") == [(2, "with"), (1, "with")]
 
 
+def test_the_summary_shows_rows_per_table(project, tmp_path):
+    source = ("  ref: sources.two_tables:db\n  incremental: {cursor: updated}\n"
+              "  tables:\n    author: {incremental: false, write_disposition: replace}\n")
+    _two_tables(project, tmp_path, source)
+    assert "family" in cli(project, "run", "db").output  # the box lists the tables
+    out = cli(project, "run", "db", "--json")
+    assert out.exit_code == 0, out.output
+    tables = json.loads(out.output.strip().splitlines()[-1])["tables"]
+    assert tables == {
+        "family": {"rows": 0, "write_disposition": "append", "cursor": "updated", "last_value": 2},
+        "author": {"rows": 1, "write_disposition": "replace", "cursor": None, "last_value": None},
+    }
+
+
 def test_without_the_override_a_table_missing_the_cursor_fails(project, tmp_path):
     _two_tables(project, tmp_path, "  ref: sources.two_tables:db\n  incremental: {cursor: updated}\n")
     result = cli(project, "run", "db")

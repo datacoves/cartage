@@ -138,6 +138,15 @@ A `tables:` entry's settings win over the destination's. `cartage validate` chec
 `with.table_names` when the pipeline lists them; otherwise `cartage run` checks them before reading anything. The
 destination hints need a dlt destination; with several destinations they apply to each.
 
+When a run loads more than one table, its summary lists the rows each table got and how it loads (`incremental` with
+the cursor's value after the run, or `full`, plus the write disposition). `--json` has the same under `tables`:
+
+```text
+  table             rows   loads
+  family               0   incremental · merge  (updated ≥ 2026-01-21 13:32:16)
+  clan_membership    480   full · replace
+```
+
 ### A database used by several pipelines
 
 When pipelines share a database (different schedules or destinations), put its settings in a `type: dlt` connection.
